@@ -220,6 +220,87 @@
     .modal-body   { padding: 20px; }
     .modal-footer { padding: 0 20px 20px; display: flex; gap: 8px; justify-content: flex-end; }
 
+    /* ─── Timesheet table ───────────────────────────────────────────────── */
+    .ts-wrap { overflow-x: auto; }
+    .ts-table {
+      border-collapse: collapse; background: var(--surface);
+      font-size: 12px; white-space: nowrap; width: 100%;
+    }
+    .ts-table thead th {
+      padding: 8px 6px; text-align: center; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); background: #F9FAFB;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 1;
+    }
+    .ts-table tbody td {
+      padding: 7px 5px; border-bottom: 1px solid #F3F4F6;
+      border-right: 1px solid #F3F4F6; text-align: center; vertical-align: middle;
+    }
+    .ts-table tbody tr:last-child td { border-bottom: none; }
+    .ts-col-name {
+      position: sticky; left: 0; z-index: 2;
+      background: var(--surface); text-align: left !important;
+      min-width: 160px; max-width: 160px;
+      border-right: 2px solid var(--border) !important;
+    }
+    .ts-table thead .ts-col-name { z-index: 3; background: #F9FAFB; }
+    .ts-col-role {
+      position: sticky; left: 160px; z-index: 2;
+      background: var(--surface); text-align: left !important;
+      min-width: 96px; max-width: 96px;
+      border-right: 1px solid var(--border) !important;
+    }
+    .ts-table thead .ts-col-role { z-index: 3; background: #F9FAFB; }
+    .ts-day { min-width: 42px; width: 42px; }
+    .ts-col-total, .ts-col-sum {
+      min-width: 68px; font-weight: 700; background: #F9FAFB !important;
+    }
+    .ts-subtotal td {
+      background: #F0FDF4 !important; font-weight: 600;
+      color: var(--success); border-bottom: 2px solid #BBF7D0 !important;
+    }
+    .ts-subtotal .ts-col-name,
+    .ts-subtotal .ts-col-role { background: #F0FDF4 !important; }
+    .ts-divider td {
+      height: 6px; background: var(--bg) !important;
+      border: none !important; padding: 0 !important;
+    }
+
+    /* ─── Timesheet photo tooltip ────────────────────────────────────────── */
+    #ts-photo-tooltip {
+      position: fixed; z-index: 500; display: none;
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: 0 8px 32px rgba(0,0,0,.2); border: 1px solid var(--border);
+      padding: 6px; pointer-events: none; min-width: 160px;
+    }
+    #ts-photo-tooltip .tip-header {
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      margin-bottom: 5px; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 172px;
+    }
+    #ts-photo-tooltip .tip-img-wrap {
+      width: 172px; height: 172px;
+      display: flex; align-items: center; justify-content: center;
+      background: #F3F4F6; border-radius: 4px; overflow: hidden;
+    }
+    #ts-photo-tooltip img { width: 172px; height: 172px; object-fit: cover; display: block; }
+    .ts-day[data-photo] { cursor: pointer; }
+    .ts-day[data-photo]:hover { filter: brightness(.94); }
+    .ts-pt-btn {
+      padding: 6px 12px; border: none; background: none; font-size: 13px;
+      font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap;
+      border-right: 1px solid var(--border);
+    }
+    .ts-pt-btn:last-child { border-right: none; }
+    .ts-pt-btn:hover { background: #F3F4F6; color: var(--text); }
+    .ts-pt-btn.ts-pt-active { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+    .ts-team-header { cursor: pointer; user-select: none; }
+    .ts-team-header:hover td { background: #E6FFF2 !important; }
+    .ts-arrow { display: inline-block; font-size: 10px; margin-right: 5px; transition: transform .15s; width: 10px; }
+    .ts-arrow.collapsed { transform: rotate(-90deg); }
+
     /* ─── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 768px) {
       .navbar-nav { display: none; }
@@ -326,16 +407,64 @@
     </div>
 
     <div class="page" id="page-timesheet">
-      <div class="page-header">
-        <div class="page-title">Табель</div>
-        <div class="page-sub">Учёт рабочего времени по периодам</div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+        <div>
+          <div class="page-title">Табель</div>
+          <div class="page-sub" id="ts-period-label">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input class="input" id="ts-search" style="width:210px;"
+            placeholder="Поиск по ФИО..." oninput="tsSearchFilter()">
+          <button class="btn btn-outline btn-sm" onclick="tsToggleAll()" id="ts-toggle-all-btn"
+            title="Свернуть / развернуть все бригады">Свернуть все</button>
+          <button class="btn btn-outline btn-sm" id="ts-excel-btn" onclick="downloadExcel()"
+            title="Скачать Excel (листы по неделям)">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+            </svg>
+            Excel
+          </button>
+        </div>
       </div>
-      <div class="card">
+
+      <!-- Выбор периода -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;flex-shrink:0;">
+          <button class="ts-pt-btn ts-pt-active" id="ts-pt-month"  onclick="setPeriodType('month')">Месяц</button>
+          <button class="ts-pt-btn"              id="ts-pt-week"   onclick="setPeriodType('week')">Неделя</button>
+          <button class="ts-pt-btn"              id="ts-pt-day"    onclick="setPeriodType('day')">День</button>
+          <button class="ts-pt-btn"              id="ts-pt-custom" onclick="setPeriodType('custom')">Период</button>
+        </div>
+        <button class="btn btn-outline btn-sm" id="ts-nav-prev" onclick="tsNavPrev()">←</button>
+        <span id="ts-nav-label" style="font-weight:600;min-width:140px;text-align:center;font-size:14px;color:var(--text);"></span>
+        <button class="btn btn-outline btn-sm" id="ts-nav-next" onclick="tsNavNext()">→</button>
+        <div id="ts-custom-wrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+          <input type="date" class="input" id="ts-from" style="width:148px;">
+          <span style="color:var(--muted);">—</span>
+          <input type="date" class="input" id="ts-to"   style="width:148px;">
+          <button class="btn btn-primary btn-sm" onclick="tsApplyCustom()">Показать</button>
+        </div>
+      </div>
+
+      <div id="ts-loading" style="display:flex;align-items:center;justify-content:center;padding:60px;">
+        <span class="spinner spinner-md"></span>
+      </div>
+
+      <div id="ts-empty" class="card" style="display:none;">
         <div class="card-body">
           <div class="empty">
             <div class="empty-icon">📋</div>
-            Страница Табель — в разработке
+            Нет данных за выбранный период
           </div>
+        </div>
+      </div>
+
+      <div id="ts-table-container" style="display:none;">
+        <div class="card ts-wrap">
+          <table class="ts-table" id="ts-table">
+            <thead id="ts-thead"></thead>
+            <tbody id="ts-tbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -442,6 +571,14 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Тултип: фото по ячейке дня в Табеле -->
+  <div id="ts-photo-tooltip">
+    <div class="tip-header" id="ts-tip-header"></div>
+    <div class="tip-img-wrap" id="ts-tip-img-wrap">
+      <span class="spinner spinner-md"></span>
     </div>
   </div>
 
@@ -688,6 +825,7 @@
       document.getElementById('page-' + page).classList.add('active');
       if (btn) btn.classList.add('active');
       if (page === 'employees') loadEmployees();
+      if (page === 'timesheet') loadTimesheet();
     }
 
     function toggleMenu() {
@@ -1100,6 +1238,631 @@
         method: 'PATCH', body: JSON.stringify({ deleted_at: null })
       });
       loadEmployees();
+    }
+
+    /* ─── Timesheet photo tooltip ───────────────────────────────────────── */
+    const photoUrlCache = {};
+    let   tipVisible    = false;
+
+    function tipCell(el) {
+      return el.dataset.photo ? el : (el.closest('td[data-photo]') || null);
+    }
+
+    document.addEventListener('mouseover', e => {
+      const td = tipCell(e.target);
+      if (!td) return;
+      showDayPhoto(e, td);
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!tipVisible) return;
+      const td = tipCell(e.target);
+      if (!td) { hideDayPhoto(); return; }
+      positionTip(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mouseout', e => {
+      if (!tipVisible) return;
+      const td = tipCell(e.target);
+      if (!td) return;
+      if (!tipCell(e.relatedTarget)) hideDayPhoto();
+    });
+
+    function positionTip(cx, cy) {
+      const tip = document.getElementById('ts-photo-tooltip');
+      const W = tip.offsetWidth  || 184;
+      const H = tip.offsetHeight || 210;
+      const margin = 14;
+      let x = cx + margin;
+      let y = cy - H / 2;
+      if (x + W > window.innerWidth  - 8) x = cx - W - margin;
+      if (y < 8)                          y = 8;
+      if (y + H > window.innerHeight - 8) y = window.innerHeight - H - 8;
+      tip.style.left = x + 'px';
+      tip.style.top  = y + 'px';
+    }
+
+    async function showDayPhoto(e, td) {
+      const photoPath = td.dataset.photo;
+      const empName   = td.dataset.emp  || '';
+      const date      = td.dataset.date || '';
+
+      const tip     = document.getElementById('ts-photo-tooltip');
+      const header  = document.getElementById('ts-tip-header');
+      const imgWrap = document.getElementById('ts-tip-img-wrap');
+
+      // Заголовок: имя + дата
+      const [, m, d] = date.split('-');
+      header.textContent = `${empName} · ${parseInt(d)}.${parseInt(m)}`;
+
+      // Показываем спиннер пока грузится
+      imgWrap.innerHTML = '<span class="spinner spinner-md"></span>';
+      tip.style.display = 'block';
+      tipVisible = true;
+      positionTip(e.clientX, e.clientY);
+
+      // Получаем подписанный URL (с кешированием)
+      let signedUrl = photoUrlCache[photoPath];
+      if (!signedUrl) {
+        signedUrl = await getSignedUrl(photoPath);
+        if (signedUrl) photoUrlCache[photoPath] = signedUrl;
+      }
+
+      if (!tipVisible) return;   // пользователь уже убрал курсор
+
+      if (signedUrl) {
+        const img = new Image();
+        img.onload = () => {
+          if (!tipVisible) return;
+          imgWrap.innerHTML = '';
+          imgWrap.appendChild(img);
+        };
+        img.onerror = () => {
+          imgWrap.innerHTML = '<span style="color:var(--muted);font-size:12px;">Нет фото</span>';
+        };
+        img.src = signedUrl;
+        img.style.cssText = 'width:172px;height:172px;object-fit:cover;display:block;border-radius:4px;';
+      } else {
+        imgWrap.innerHTML = '<span style="color:var(--muted);font-size:12px;">Нет фото</span>';
+      }
+    }
+
+    function hideDayPhoto() {
+      document.getElementById('ts-photo-tooltip').style.display = 'none';
+      tipVisible = false;
+    }
+
+    /* ─── Timesheet search & collapse ───────────────────────────────────── */
+    const tsCollapsed = new Set();
+    let   tsSearchQ   = '';
+
+    function tsSearchFilter() {
+      tsSearchQ = (document.getElementById('ts-search').value || '').toLowerCase().trim();
+      applyTsVisibility();
+    }
+
+    function tsToggleTeam(tid) {
+      if (tsCollapsed.has(tid)) tsCollapsed.delete(tid);
+      else                       tsCollapsed.add(tid);
+      applyTsVisibility();
+    }
+
+    function tsToggleAll() {
+      // Определяем все teamId в таблице
+      const teamIds = [...new Set(
+        [...document.querySelectorAll('#ts-tbody tr[data-team-id][data-emp-name]')]
+          .map(r => Number(r.dataset.teamId))
+      )];
+      const allCollapsed = teamIds.every(id => tsCollapsed.has(id));
+      if (allCollapsed) {
+        teamIds.forEach(id => tsCollapsed.delete(id));
+        document.getElementById('ts-toggle-all-btn').textContent = 'Свернуть все';
+      } else {
+        teamIds.forEach(id => tsCollapsed.add(id));
+        document.getElementById('ts-toggle-all-btn').textContent = 'Развернуть все';
+      }
+      applyTsVisibility();
+    }
+
+    function applyTsVisibility() {
+      const q = tsSearchQ;
+      // Какие бригады имеют хоть одного совпадающего сотрудника
+      const teamVisible = {};
+
+      for (const row of document.querySelectorAll('#ts-tbody tr[data-emp-name]')) {
+        const tid      = Number(row.dataset.teamId);
+        const empName  = row.dataset.empName || '';
+        const matches  = !q || empName.includes(q);
+        const hidden   = !matches || tsCollapsed.has(tid);
+        row.style.display = hidden ? 'none' : '';
+        if (matches) teamVisible[tid] = true;
+      }
+
+      for (const row of document.querySelectorAll('#ts-tbody tr.ts-team-header')) {
+        const tid = Number(row.dataset.teamId);
+        // Скрываем подитог только если нет совпадений при поиске
+        row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
+        // Обновляем стрелку
+        const arrow = document.getElementById(`ts-arrow-${tid}`);
+        if (arrow) {
+          if (tsCollapsed.has(tid)) arrow.classList.add('collapsed');
+          else                       arrow.classList.remove('collapsed');
+        }
+      }
+
+      for (const row of document.querySelectorAll('#ts-tbody tr.ts-divider')) {
+        const tid = Number(row.dataset.teamId);
+        row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
+      }
+
+      // Синхронизируем кнопку «Свернуть/Развернуть все»
+      const btn = document.getElementById('ts-toggle-all-btn');
+      if (btn) {
+        const teamIds = [...new Set(
+          [...document.querySelectorAll('#ts-tbody tr[data-emp-name]')]
+            .map(r => Number(r.dataset.teamId))
+        )];
+        const allCollapsed = teamIds.length && teamIds.every(id => tsCollapsed.has(id));
+        btn.textContent = allCollapsed ? 'Развернуть все' : 'Свернуть все';
+      }
+    }
+
+    /* ─── Timesheet ─────────────────────────────────────────────────────── */
+    const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                         'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const MONTH_GEN   = ['января','февраля','марта','апреля','мая','июня',
+                         'июля','августа','сентября','октября','ноября','декабря'];
+    const DAY_ABBR    = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+    let tsPeriodType = 'month';       // 'day' | 'week' | 'month' | 'custom'
+    let tsRefDate    = new Date();    // опорная дата для навигации
+    let tsCustomFrom = '';            // YYYY-MM-DD
+    let tsCustomTo   = '';            // YYYY-MM-DD
+
+    // UTC-геттеры для московского времени (UTC+3)
+    function mskOf(date) { return new Date(date.getTime() + 3 * 3600000); }
+
+    function getPeriodInfo() {
+      if (tsPeriodType === 'month') {
+        const m = mskOf(tsRefDate);
+        const y = m.getUTCFullYear(), mo = m.getUTCMonth();
+        const cnt = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+        const days = Array.from({ length: cnt }, (_, i) =>
+          `${y}-${String(mo + 1).padStart(2,'0')}-${String(i + 1).padStart(2,'0')}`
+        );
+        return {
+          days,
+          startISO: new Date(Date.UTC(y, mo,     1) - 3 * 3600000).toISOString(),
+          endISO:   new Date(Date.UTC(y, mo + 1, 1) - 3 * 3600000).toISOString(),
+          label:    `${MONTH_NAMES[mo]} ${y}`,
+          prevStartISO: new Date(Date.UTC(y, mo - 1, 1) - 3 * 3600000).toISOString(),
+          prevEndISO:   new Date(Date.UTC(y, mo,     1) - 3 * 3600000).toISOString(),
+        };
+      }
+
+      if (tsPeriodType === 'week') {
+        const m = mskOf(tsRefDate);
+        const dow = m.getUTCDay();                         // 0=Вс
+        const mon = new Date(m.getTime() - (dow === 0 ? 6 : dow - 1) * 86400000);
+        const days = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(mon.getTime() + i * 86400000);
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+        });
+        const [y0,m0,d0] = days[0].split('-').map(Number);
+        const [y1,m1,d1] = days[6].split('-').map(Number);
+        const start = new Date(Date.UTC(y0, m0-1, d0) - 3*3600000);
+        const end   = new Date(Date.UTC(y1, m1-1, d1+1) - 3*3600000);
+        const prevStart = new Date(start.getTime() - 7*86400000);
+        return {
+          days,
+          startISO: start.toISOString(), endISO: end.toISOString(),
+          label: `${d0} ${MONTH_GEN[m0-1]} — ${d1} ${MONTH_GEN[m1-1]} ${y1}`,
+          prevStartISO: prevStart.toISOString(), prevEndISO: start.toISOString(),
+        };
+      }
+
+      if (tsPeriodType === 'day') {
+        const m = mskOf(tsRefDate);
+        const y = m.getUTCFullYear(), mo = m.getUTCMonth(), d = m.getUTCDate();
+        const dk = `${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const start = new Date(Date.UTC(y, mo, d)   - 3*3600000);
+        const end   = new Date(Date.UTC(y, mo, d+1) - 3*3600000);
+        const prevStart = new Date(start.getTime() - 86400000);
+        return {
+          days: [dk],
+          startISO: start.toISOString(), endISO: end.toISOString(),
+          label: `${d} ${MONTH_GEN[mo]} ${y}`,
+          prevStartISO: prevStart.toISOString(), prevEndISO: start.toISOString(),
+        };
+      }
+
+      if (tsPeriodType === 'custom' && tsCustomFrom && tsCustomTo && tsCustomFrom <= tsCustomTo) {
+        const [y0,m0,d0] = tsCustomFrom.split('-').map(Number);
+        const [y1,m1,d1] = tsCustomTo.split('-').map(Number);
+        const days = [];
+        let cur = Date.UTC(y0, m0-1, d0);
+        const fin = Date.UTC(y1, m1-1, d1);
+        while (cur <= fin) {
+          const dt = new Date(cur);
+          days.push(`${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')}`);
+          cur += 86400000;
+        }
+        const start = new Date(Date.UTC(y0, m0-1, d0)   - 3*3600000);
+        const end   = new Date(Date.UTC(y1, m1-1, d1+1) - 3*3600000);
+        return {
+          days,
+          startISO: start.toISOString(), endISO: end.toISOString(),
+          label: `${d0}.${String(m0).padStart(2,'0')}.${y0} — ${d1}.${String(m1).padStart(2,'0')}.${y1}`,
+          prevStartISO: null, prevEndISO: null,
+        };
+      }
+      return null;
+    }
+
+    function setPeriodType(type) {
+      tsPeriodType = type;
+      ['day','week','month','custom'].forEach(t => {
+        document.getElementById(`ts-pt-${t}`).classList.toggle('ts-pt-active', t === type);
+      });
+      const isCustom = type === 'custom';
+      document.getElementById('ts-custom-wrap').style.display = isCustom ? 'flex' : 'none';
+      document.getElementById('ts-nav-prev').style.display    = isCustom ? 'none' : '';
+      document.getElementById('ts-nav-next').style.display    = isCustom ? 'none' : '';
+      if (!isCustom) loadTimesheet();
+    }
+
+    function tsNavPrev() { tsRefDate = tsShift(tsRefDate, -1); loadTimesheet(); }
+    function tsNavNext() { tsRefDate = tsShift(tsRefDate,  1); loadTimesheet(); }
+
+    function tsShift(date, dir) {
+      const d = new Date(date);
+      if (tsPeriodType === 'day')   d.setUTCDate(d.getUTCDate()   + dir);
+      if (tsPeriodType === 'week')  d.setUTCDate(d.getUTCDate()   + 7 * dir);
+      if (tsPeriodType === 'month') d.setUTCMonth(d.getUTCMonth() + dir);
+      return d;
+    }
+
+    function tsApplyCustom() {
+      tsCustomFrom = document.getElementById('ts-from').value;
+      tsCustomTo   = document.getElementById('ts-to').value;
+      if (tsCustomFrom && tsCustomTo && tsCustomFrom <= tsCustomTo) loadTimesheet();
+    }
+
+    async function loadTimesheet() {
+      document.getElementById('ts-loading').style.display         = 'flex';
+      document.getElementById('ts-table-container').style.display = 'none';
+      document.getElementById('ts-empty').style.display           = 'none';
+      // Сброс поиска и сворачивания при смене периода
+      tsCollapsed.clear();
+      tsSearchQ = '';
+      const srch = document.getElementById('ts-search');
+      if (srch) srch.value = '';
+
+      const period = getPeriodInfo();
+      if (!period) {
+        document.getElementById('ts-loading').style.display = 'none';
+        return;
+      }
+      const { days, startISO, endISO, prevStartISO, prevEndISO, label } = period;
+
+      document.getElementById('ts-period-label').textContent = label;
+      document.getElementById('ts-nav-label').textContent    = label;
+
+      const [employees, events, prevEvents] = await Promise.all([
+        guardedFetch(
+          '/rest/v1/employees?select=id,display_name,position,team,daily_rate,hourly_rate' +
+          '&deleted_at=is.null&order=team.asc,display_name.asc'
+        ),
+        guardedFetch(
+          `/rest/v1/events?select=employee_id,photo_timestamp,hours,status,fraud_flags,photo_url` +
+          `&photo_timestamp=gte.${startISO}&photo_timestamp=lt.${endISO}` +
+          `&status=in.(done,needs_review)&limit=5000`
+        ),
+        prevStartISO ? guardedFetch(
+          `/rest/v1/events?select=employee_id,photo_timestamp,hours` +
+          `&photo_timestamp=gte.${prevStartISO}&photo_timestamp=lt.${prevEndISO}` +
+          `&status=eq.done&hours=not.is.null&limit=5000`
+        ) : Promise.resolve([])
+      ]);
+
+      document.getElementById('ts-loading').style.display = 'none';
+
+      if (!employees || !employees.length) {
+        document.getElementById('ts-empty').style.display = '';
+        return;
+      }
+
+      // Вспомогательная: UTC ISO → московская дата YYYY-MM-DD
+      function toMskDate(isoStr) {
+        const msk = new Date(new Date(isoStr).getTime() + 3 * 3600000);
+        return `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
+      }
+
+      // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url }
+      const eMap = {};
+      for (const ev of events || []) {
+        if (!ev.employee_id || !ev.photo_timestamp) continue;
+        const dk    = toMskDate(ev.photo_timestamp);
+        const empId = ev.employee_id;
+        if (!eMap[empId]) eMap[empId] = {};
+        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null };
+        const cell = eMap[empId][dk];
+        // Предпочитаем событие с часами (обычно departure) — у него фото информативнее
+        if (ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
+          cell.hours     = ev.hours;
+          cell.photo_url = ev.photo_url || cell.photo_url;
+        } else if (!cell.photo_url && ev.photo_url) {
+          cell.photo_url = ev.photo_url;
+        }
+        if (ev.status === 'needs_review') cell.review = true;
+        if (ev.fraud_flags && ev.fraud_flags.length)  cell.fraud  = true;
+      }
+
+      // Переход часов: суммируем максимальные часы за каждый день предыдущего периода
+      // (берём max на случай если оба события arrival+departure попали в done с hours)
+      const prevDayMax = {};   // `${empId}|${date}` → maxHours
+      for (const ev of prevEvents || []) {
+        if (!ev.employee_id || !ev.photo_timestamp || ev.hours == null) continue;
+        const key = `${ev.employee_id}|${toMskDate(ev.photo_timestamp)}`;
+        if (prevDayMax[key] == null || ev.hours > prevDayMax[key])
+          prevDayMax[key] = ev.hours;
+      }
+      const prevMap = {};   // empId → totalHours прошлого периода
+      for (const [key, h] of Object.entries(prevDayMax)) {
+        const empId = key.split('|')[0];
+        prevMap[empId] = (prevMap[empId] || 0) + h;
+      }
+
+      renderTimesheetTable(employees, eMap, days, prevMap);
+    }
+
+    let tsLastData = { employees: [], eMap: {}, prevMap: {}, days: [] };
+
+    function renderTimesheetTable(employees, eMap, days, prevMap = {}) {
+      tsLastData = { employees, eMap, prevMap, days };
+      // days — массив YYYY-MM-DD строк
+      const dateKeys   = days;
+      const weekdays   = days.map(dk => {
+        const [y, m, d] = dk.split('-').map(Number);
+        return new Date(y, m - 1, d).getDay();
+      });
+      const isWknd     = weekdays.map(w => w === 0 || w === 6);
+      const multiMonth = new Set(days.map(dk => dk.slice(0, 7))).size > 1;
+
+      // ── Thead ────────────────────────────────────────────────────────────
+      document.getElementById('ts-thead').innerHTML = `<tr>
+        <th class="ts-col-name">Сотрудник</th>
+        <th class="ts-col-role">Роль</th>
+        <th style="min-width:72px;">Ставка/д</th>
+        <th style="min-width:60px;">Ставка/ч</th>
+        <th style="min-width:52px;" title="Переход часов из прошлого периода">Перех.ч</th>
+        ${days.map((dk, i) => {
+          const dayNum = parseInt(dk.slice(8));
+          const sub    = multiMonth
+            ? `${parseInt(dk.slice(5,7))}.${DAY_ABBR[weekdays[i]]}`
+            : DAY_ABBR[weekdays[i]];
+          const wkBg = isWknd[i] ? ' style="background:#FFF3E0;"' : '';
+          return `<th class="ts-day"${wkBg}>${dayNum}<br><span style="font-size:9px;font-weight:500;">${sub}</span></th>`;
+        }).join('')}
+        <th class="ts-col-total">Итого ч</th>
+        <th class="ts-col-sum">Сумма ₽</th>
+      </tr>`;
+
+      // ── Tbody ────────────────────────────────────────────────────────────
+      // Группируем по бригаде
+      const teams = {};
+      for (const emp of employees) {
+        const t = emp.team || '—';
+        if (!teams[t]) teams[t] = [];
+        teams[t].push(emp);
+      }
+
+      let html = '';
+      const colSpan  = 5 + days.length + 2;
+      let   teamIdx  = 0;   // числовой id бригады (безопасен как атрибут)
+
+      for (const [team, members] of Object.entries(teams)) {
+        const tid = teamIdx++;
+        let teamHours = 0;
+        let teamSum   = 0;
+
+        for (const emp of members) {
+          const empData    = eMap[emp.id] || {};
+          const hourlyRate = emp.hourly_rate
+            ? parseFloat(emp.hourly_rate)
+            : (emp.daily_rate ? parseFloat(emp.daily_rate) / 8 : 0);
+          let totalHours = 0;
+
+          const dayCells = days.map((d, i) => {
+            const cell = empData[dateKeys[i]];
+            const wknd = isWknd[i];
+            const wkndStyle = wknd ? 'background:#FFF3E0;' : '';
+            const photoAttr = cell && cell.photo_url
+              ? ` data-photo="${escHtml(cell.photo_url)}" data-emp="${escHtml(emp.display_name)}" data-date="${dateKeys[i]}"`
+              : '';
+
+            if (!cell) {
+              return `<td class="ts-day" style="${wkndStyle}color:#D1D5DB;">—</td>`;
+            }
+            if (cell.hours != null) {
+              totalHours += cell.hours;
+              const hlStyle = cell.review
+                ? 'background:var(--danger-bg);color:var(--danger);font-weight:600;'
+                : wkndStyle;
+              const warn = cell.fraud ? ' ⚠️' : '';
+              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${cell.hours}${warn}</td>`;
+            }
+            // Событие есть, но часы не посчитаны (неполный день)
+            return `<td class="ts-day" style="${wkndStyle}background:var(--warn-bg);color:var(--warning);"${photoAttr}>?</td>`;
+          }).join('');
+
+          const prevHours = prevMap[emp.id] || 0;
+          const sum = totalHours * hourlyRate;
+          teamHours += totalHours;
+          teamSum   += sum;
+
+          const prevCell = prevHours
+            ? `<span title="Часы из ${MONTH_NAMES[tsMonth === 0 ? 11 : tsMonth - 1]}"
+                style="color:var(--accent);font-weight:600;">${prevHours.toFixed(1)}</span>`
+            : `<span style="color:#D1D5DB;">0</span>`;
+
+          html += `<tr data-team-id="${tid}" data-emp-name="${escHtml(emp.display_name.toLowerCase())}">
+            <td class="ts-col-name" style="padding:8px 8px;">
+              <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
+            </td>
+            <td class="ts-col-role" style="color:var(--muted);padding:8px 6px;">${escHtml(emp.position || '—')}</td>
+            <td>${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
+            <td style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
+            <td>${prevCell}</td>
+            ${dayCells}
+            <td class="ts-col-total">${totalHours ? totalHours.toFixed(1) : '—'}</td>
+            <td class="ts-col-sum">${sum ? sum.toLocaleString('ru', {maximumFractionDigits:0}) : '—'}</td>
+          </tr>`;
+        }
+
+        // Подитог бригады (кликабельный — сворачивание)
+        html += `<tr class="ts-subtotal ts-team-header" data-team-id="${tid}" onclick="tsToggleTeam(${tid})">
+          <td class="ts-col-name" style="padding:8px 8px;">
+            <span class="ts-arrow" id="ts-arrow-${tid}">▼</span>${escHtml(team)}
+          </td>
+          <td class="ts-col-role">${members.length} чел.</td>
+          <td colspan="3"></td>
+          ${days.map(() => '<td></td>').join('')}
+          <td class="ts-col-total">${teamHours.toFixed(1)}</td>
+          <td class="ts-col-sum">${teamSum.toLocaleString('ru', {maximumFractionDigits:0})}</td>
+        </tr>`;
+
+        // Разделитель между бригадами
+        html += `<tr class="ts-divider" data-team-id="${tid}"><td colspan="${colSpan}"></td></tr>`;
+      }
+
+      document.getElementById('ts-tbody').innerHTML = html;
+      document.getElementById('ts-table-container').style.display = '';
+    }
+
+    /* ─── Excel export ───────────────────────────────────────────────────── */
+    function loadSheetJS(cb) {
+      if (typeof XLSX !== 'undefined') { cb(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload  = cb;
+      s.onerror = () => alert('Не удалось загрузить библиотеку Excel.\nПроверьте подключение к интернету.');
+      document.head.appendChild(s);
+    }
+
+    function splitIntoWeeks(days) {
+      const weeks = [];
+      let cur = [];
+      for (const dk of days) {
+        const [y, m, d] = dk.split('-').map(Number);
+        const dow = new Date(y, m - 1, d).getDay(); // 0=Вс
+        if (dow === 1 && cur.length) { weeks.push(cur); cur = []; }
+        cur.push(dk);
+      }
+      if (cur.length) weeks.push(cur);
+      return weeks.map(wDays => {
+        const f = wDays[0], l = wDays[wDays.length - 1];
+        const [y0,m0,d0] = f.split('-').map(Number);
+        const [y1,m1,d1] = l.split('-').map(Number);
+        const label = `${String(d0).padStart(2,'0')}.${String(m0).padStart(2,'0')}-${String(d1).padStart(2,'0')}.${String(m1).padStart(2,'0')}`;
+        return { label, days: wDays };
+      });
+    }
+
+    function buildExcelSheet(employees, eMap, days, prevMap) {
+      const pad2  = n => String(n).padStart(2, '0');
+      const dayHdrs = days.map(dk => `${parseInt(dk.slice(8))}.${pad2(parseInt(dk.slice(5,7)))}`);
+      const hdr = ['ФИО','Роль','Бригада','Ставка/д','Ставка/ч','Перех.ч',
+                   ...dayHdrs, 'Итого ч', 'Сумма ₽'];
+      const aoa = [hdr];
+
+      const teams = {};
+      for (const emp of employees) {
+        const t = emp.team || '—';
+        if (!teams[t]) teams[t] = [];
+        teams[t].push(emp);
+      }
+
+      for (const [team, members] of Object.entries(teams)) {
+        let tHours = 0, tSum = 0;
+        for (const emp of members) {
+          const empData    = eMap[emp.id] || {};
+          const hourlyRate = emp.hourly_rate
+            ? parseFloat(emp.hourly_rate)
+            : (emp.daily_rate ? parseFloat(emp.daily_rate) / 8 : 0);
+          let totalHours = 0;
+          const dayCols = days.map(dk => {
+            const cell = empData[dk];
+            if (!cell || cell.hours == null) return '';
+            totalHours += cell.hours;
+            return cell.hours;
+          });
+          const prevH = parseFloat((prevMap[emp.id] || 0).toFixed(1)) || '';
+          const sum   = Math.round(totalHours * hourlyRate);
+          tHours += totalHours; tSum += sum;
+          aoa.push([
+            emp.display_name, emp.position || '', team,
+            emp.daily_rate    ? parseFloat(emp.daily_rate)         : '',
+            hourlyRate        ? parseFloat(hourlyRate.toFixed(2))  : '',
+            prevH,
+            ...dayCols,
+            totalHours ? parseFloat(totalHours.toFixed(1)) : '',
+            sum || ''
+          ]);
+        }
+        // Подитог бригады
+        aoa.push([
+          team, `${members.length} чел.`, '', '', '', '',
+          ...days.map(() => ''),
+          parseFloat(tHours.toFixed(1)), Math.round(tSum)
+        ]);
+        aoa.push([]); // разделитель
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      // Ширины столбцов
+      ws['!cols'] = [
+        {wch:26},{wch:16},{wch:14},{wch:10},{wch:10},{wch:9},
+        ...days.map(() => ({wch:6})),
+        {wch:10},{wch:13}
+      ];
+
+      // Заморозка первых двух столбцов
+      ws['!freeze'] = { xSplit: 2, ySplit: 1 };
+
+      return ws;
+    }
+
+    function downloadExcel() {
+      const { employees, eMap, prevMap, days } = tsLastData;
+      if (!days.length || !employees.length) {
+        alert('Нет данных для выгрузки. Сначала откройте Табель.');
+        return;
+      }
+      const btn = document.getElementById('ts-excel-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-sm"></span> Генерация...';
+
+      loadSheetJS(() => {
+        try {
+          const weeks = splitIntoWeeks(days);
+          const wb    = XLSX.utils.book_new();
+          for (const { label, days: wDays } of weeks) {
+            const ws = buildExcelSheet(employees, eMap, wDays, prevMap);
+            XLSX.utils.book_append_sheet(wb, ws, label);
+          }
+          const period  = getPeriodInfo();
+          const safe    = (period?.label || 'export').replace(/[\/\\:*?"<>|]/g, '_');
+          XLSX.writeFile(wb, `Табель_${safe}.xlsx`);
+        } catch(e) {
+          alert('Ошибка генерации Excel: ' + e.message);
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+        </svg> Excel`;
+      });
     }
 
     /* ─── Init ──────────────────────────────────────────────────────────── */
