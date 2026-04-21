@@ -64,23 +64,23 @@
 ---
 
 ## Фаза 5 — AI Worker (GitHub Actions с батчингом)
-- [ ] Workflow: запуск по cron каждые 5–10 минут
-- [ ] concurrency: group в workflow (запрет параллельных запусков)
-- [ ] Атомарный захват записей: UPDATE status=processing + processing_started_at
-- [ ] Восстановление зависших: processing > 15 мин → вернуть в pending
-- [ ] Поиск сотрудника по name_from_photo
-- [ ] Face recognition как верификация (лицо соответствует подписи?)
-- [ ] Несовпадение лица → fraud_flag="face_mismatch", status=needs_review
-- [ ] event_type берётся из event_type_raw (не угадывается по времени)
-- [ ] Расчёт часов: последний «конец смены» − первый «начало смены»
+- [x] Workflow: запуск по cron каждые 5–10 минут
+- [x] concurrency: group в workflow (запрет параллельных запусков)
+- [x] Атомарный захват записей: UPDATE status=processing + processing_started_at
+- [x] Восстановление зависших: processing > 15 мин → вернуть в pending
+- [x] Поиск сотрудника по name_from_photo
+- [x] Face recognition как верификация (лицо соответствует подписи?)
+- [x] Несовпадение лица → fraud_flag="face_mismatch", status=needs_review
+- [x] event_type берётся из event_type_raw (не угадывается по времени)
+- [x] Расчёт часов: последний «конец смены» − первый «начало смены»
       за этот день. Обед НЕ вычитается. Результат — дробное число (9.5 = 9ч 30м)
-- [ ] Если за день только приход ИЛИ только уход →
+- [x] Если за день только приход ИЛИ только уход →
       incomplete_day, status=needs_review
-- [ ] Выходные (сб, вс) обрабатываются как будние — те же правила расчёта
-- [ ] Обновление events: status=done, employee_id, event_type, hours
-- [ ] Нераспознанные / с fraud_flags → status=needs_review
-- [ ] Telegram-уведомление руководителю в личку при появлении needs_review
-- [ ] Запись бизнес-событий в таблицу logs
+- [x] Выходные (сб, вс) обрабатываются как будние — те же правила расчёта
+- [x] Обновление events: status=done, employee_id, event_type, hours
+- [x] Нераспознанные / с fraud_flags → status=needs_review
+- [x] Telegram-уведомление руководителю в личку при появлении needs_review
+- [x] Запись бизнес-событий в таблицу logs
 
 ---
 
