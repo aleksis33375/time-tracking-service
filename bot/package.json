@@ -1,0 +1,12 @@
+{
+  "name": "ai-tabel-bot",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "sharp": "0.33.4",
+    "tesseract.js": "5.1.0"
+  }
+}
