@@ -46,7 +46,7 @@
 
 ## Фаза 4 — Telegram Bot (Vercel Serverless Function)
 - [x] Создать бота через BotFather, отключить privacy mode
-- [ ] Добавить бота в существующую группу (отложено)
+- [x] Добавить бота в существующую группу
 - [x] Vercel Serverless Function: webhook handler
 - [x] Регистрация webhook с secret_token + валидация заголовка
       X-Telegram-Bot-Api-Secret-Token
@@ -86,7 +86,7 @@
 
 ## Фаза 6 — Автоудаление старых фото
 - [ ] Отдельный GitHub Actions workflow по cron (раз в сутки)
-- [ ] Удаление файлов фото из Storage старше 30 дней
+- [ ] Удаление файлов фото из Storage старше 60 дней
 - [ ] Записи в events остаются навсегда (удаляются только файлы)
 - [ ] Запись в logs: сколько файлов удалено за прогон
 
