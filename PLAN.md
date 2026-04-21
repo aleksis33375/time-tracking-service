@@ -45,20 +45,20 @@
 ---
 
 ## Фаза 4 — Telegram Bot (Vercel Serverless Function)
-- [ ] Создать бота через BotFather, отключить privacy mode
-- [ ] Добавить бота в существующую группу
-- [ ] Vercel Serverless Function: webhook handler
-- [ ] Регистрация webhook с secret_token + валидация заголовка
+- [x] Создать бота через BotFather, отключить privacy mode
+- [ ] Добавить бота в существующую группу (отложено)
+- [x] Vercel Serverless Function: webhook handler
+- [x] Регистрация webhook с secret_token + валидация заголовка
       X-Telegram-Bot-Api-Secret-Token
-- [ ] Фильтрация: обрабатывать ТОЛЬКО фото, остальное игнорировать
-- [ ] Сжатие входящего фото до ~150 КБ перед сохранением
-- [ ] OCR верхней правой области: дата, время, город, индекс
-- [ ] OCR нижней области: имя сотрудника + тип события
+- [x] Фильтрация: обрабатывать ТОЛЬКО фото, остальное игнорировать
+- [x] Сжатие входящего фото до ~150 КБ перед сохранением
+- [x] OCR верхней правой области: дата, время, город, индекс
+- [x] OCR нижней области: имя сотрудника + тип события
       («начало смены» / «конец смены»)
-- [ ] Сверка индекса с OBJECT_POSTCODE →
+- [x] Сверка индекса с OBJECT_POSTCODE →
       если не совпал: fraud_flag = "wrong_location"
-- [ ] Сохранение сжатого фото в Supabase Storage
-- [ ] Запись в events: status=pending, photo_timestamp, name_from_photo,
+- [x] Сохранение сжатого фото в Supabase Storage
+- [x] Запись в events: status=pending, photo_timestamp, name_from_photo,
       event_type_raw, postcode_from_photo, fraud_flags
 
 ---
