@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Табель</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.5; background: #F9FAFB; color: #111827; }
+
+    /* Auth screen */
+    #auth-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #F9FAFB;
+    }
+    .auth-box {
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 40px;
+      width: 100%;
+      max-width: 360px;
+    }
+    .auth-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .auth-box p  { font-size: 14px; color: #6B7280; margin-bottom: 28px; }
+    .auth-box label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+    .auth-box input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: system-ui, sans-serif;
+      outline: none;
+      margin-bottom: 20px;
+    }
+    .auth-box input:focus { border-color: #2563EB; }
+    .btn-primary {
+      width: 100%;
+      padding: 10px;
+      background: #2563EB;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover  { background: #1D4ED8; }
+    .btn-primary:disabled { background: #93C5FD; cursor: not-allowed; }
+    .auth-error { color: #DC2626; font-size: 13px; margin-top: 12px; display: none; }
+
+    /* Поле пароля с кнопкой показать/скрыть */
+    .password-wrap { position: relative; margin-bottom: 20px; }
+    .password-wrap input { margin-bottom: 0; padding-right: 44px; }
+    .toggle-pass {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: #6B7280; font-size: 13px;
+      padding: 0;
+    }
+    .toggle-pass:hover { color: #111827; }
+
+    /* Спиннер загрузки */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #fff; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.6s linear infinite;
+      margin-right: 8px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* App screen */
+    #app-screen { display: none; min-height: 100vh; }
+
+    /* Navbar */
+    .navbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+      background: #FFFFFF; border-bottom: 1px solid #E5E7EB;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .navbar-brand { font-weight: 700; font-size: 16px; color: #111827; }
+    .navbar-nav { display: flex; gap: 4px; }
+    .nav-link {
+      padding: 6px 14px; border-radius: 6px; font-size: 14px;
+      color: #6B7280; text-decoration: none; cursor: pointer;
+      background: none; border: none; font-family: system-ui, sans-serif;
+    }
+    .nav-link:hover  { background: #F3F4F6; color: #111827; }
+    .nav-link.active { background: #EFF6FF; color: #2563EB; font-weight: 600; }
+    .btn-logout {
+      padding: 6px 14px; border-radius: 6px; font-size: 14px;
+      color: #DC2626; background: none; border: 1px solid #FECACA;
+      cursor: pointer; font-family: system-ui, sans-serif;
+    }
+    .btn-logout:hover { background: #FEF2F2; }
+
+    /* Page container */
+    .page { display: none; padding: 24px; }
+    .page.active { display: block; }
+
+    /* Loading overlay */
+    #loading-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: #F9FAFB;
+    }
+    #loading-screen p { color: #6B7280; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+  <!-- Экран входа -->
+  <div id="auth-screen">
+    <div class="auth-box">
+      <h1>AI Табель</h1>
+      <p>Введите пароль для входа</p>
+      <label for="password">Пароль</label>
+      <div class="password-wrap">
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        <button class="toggle-pass" onclick="togglePass()" type="button" title="Показать пароль">👁</button>
+      </div>
+      <button class="btn-primary" id="login-btn" onclick="signIn()">Войти</button>
+      <div class="auth-error" id="auth-error">Неверный пароль. Попробуйте ещё раз.</div>
+    </div>
+  </div>
+
+  <!-- Экран загрузки (пока проверяем сессию) -->
+  <div id="loading-screen">
+    <p>Загрузка...</p>
+  </div>
+
+  <!-- Основное приложение (загружается после входа) -->
+  <div id="app-screen">
+    <nav class="navbar">
+      <span class="navbar-brand">AI Табель</span>
+      <div class="navbar-nav">
+        <button class="nav-link active" onclick="navigateTo('overview')">Обзор</button>
+        <button class="nav-link" onclick="navigateTo('timesheet')">Табель</button>
+        <button class="nav-link" onclick="navigateTo('attendance')">Посещаемость</button>
+        <button class="nav-link" onclick="navigateTo('employees')">Сотрудники</button>
+        <button class="nav-link" onclick="navigateTo('review')">Проверка</button>
+        <button class="nav-link" onclick="navigateTo('analytics')">Аналитика</button>
+        <button class="nav-link" onclick="navigateTo('logs')">Логи</button>
+      </div>
+      <button class="btn-logout" onclick="signOut()">Выйти</button>
+    </nav>
+
+    <div class="page active" id="page-overview">
+      <h2>Обзор</h2>
+    </div>
+    <div class="page" id="page-timesheet">
+      <h2>Табель</h2>
+    </div>
+    <div class="page" id="page-attendance">
+      <h2>Посещаемость</h2>
+    </div>
+    <div class="page" id="page-employees">
+      <h2>Сотрудники</h2>
+    </div>
+    <div class="page" id="page-review">
+      <h2>Проверка</h2>
+    </div>
+    <div class="page" id="page-analytics">
+      <h2>Аналитика</h2>
+    </div>
+    <div class="page" id="page-logs">
+      <h2>Логи</h2>
+    </div>
+  </div>
+
+  <script>
+    // ─── Конфигурация Supabase ───────────────────────────────────────────────
+    const SUPABASE_URL  = 'https://weqvsquaftkxrafybrnk.supabase.co';
+    const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlcXZzcXVhZnRreHJhZnlicm5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDA2NjYsImV4cCI6MjA5MjI3NjY2Nn0.ZGI8lprQ_RfZY6pyA003rs2HcICWLne_GrS90LDzkzg';
+    const ADMIN_EMAIL   = 'admin@dashboard.local';
+
+    // ─── Auth helpers ────────────────────────────────────────────────────────
+    async function supabasePost(path, body) {
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    }
+
+    async function supabaseFetch(path, options = {}) {
+      const token = localStorage.getItem('sb_token');
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${token}`,
+          ...(options.headers || {})
+        }
+      });
+      return res.json();
+    }
+
+    function togglePass() {
+      const input = document.getElementById('password');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    async function signIn() {
+      const password = document.getElementById('password').value.trim();
+      if (!password) return;
+
+      const btn = document.getElementById('login-btn');
+      const err = document.getElementById('auth-error');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Вхожу...';
+      err.style.display = 'none';
+
+      const data = await supabasePost('/auth/v1/token?grant_type=password', {
+        email: ADMIN_EMAIL,
+        password: password
+      });
+
+      if (data.access_token) {
+        localStorage.setItem('sb_token', data.access_token);
+        showApp();
+      } else {
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = 'Войти';
+      }
+    }
+
+    async function signOut() {
+      await supabasePost('/auth/v1/logout', {});
+      localStorage.removeItem('sb_token');
+      showAuth();
+    }
+
+    function getToken() {
+      return localStorage.getItem('sb_token');
+    }
+
+    // ─── Навигация между страницами ──────────────────────────────────────────
+    function navigateTo(page) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      event.currentTarget.classList.add('active');
+    }
+
+    // ─── Экраны ──────────────────────────────────────────────────────────────
+    function showAuth() {
+      document.getElementById('loading-screen').style.display = 'none';
+      document.getElementById('auth-screen').style.display    = 'flex';
+      document.getElementById('app-screen').style.display     = 'none';
+    }
+
+    function showApp() {
+      document.getElementById('loading-screen').style.display = 'none';
+      document.getElementById('auth-screen').style.display    = 'none';
+      document.getElementById('app-screen').style.display     = 'block';
+    }
+
+    // ─── Защита: проверка токена перед каждым запросом к API ─────────────────
+    async function guardedFetch(path, options = {}) {
+      const data = await supabaseFetch(path, options);
+      if (data.message === 'JWT expired' || data.code === 'PGRST301') {
+        localStorage.removeItem('sb_token');
+        showAuth();
+        return null;
+      }
+      return data;
+    }
+
+    // ─── Вход по Enter ───────────────────────────────────────────────────────
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') signIn();
+    });
+
+    // ─── Проверка сессии при загрузке ────────────────────────────────────────
+    (async function init() {
+      const token = getToken();
+      if (!token) { showAuth(); return; }
+
+      const data = await supabaseFetch('/auth/v1/user');
+      if (data.id) {
+        showApp();
+      } else {
+        localStorage.removeItem('sb_token');
+        showAuth();
+      }
+    })();
+  </script>
+
+</body>
+</html>

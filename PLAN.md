@@ -23,10 +23,10 @@
 ---
 
 ## Фаза 2 — Авторизация Dashboard
-- [ ] Supabase Auth integration
-- [ ] Row Level Security на employees, events, logs
-- [ ] Login-страница в Dashboard
-- [ ] Защита всех страниц Dashboard авторизацией
+- [x] Supabase Auth integration
+- [x] Row Level Security на employees, events, logs
+- [x] Login-страница в Dashboard
+- [x] Защита всех страниц Dashboard авторизацией
 
 ---
 
