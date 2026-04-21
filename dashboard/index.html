@@ -5,179 +5,594 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Табель</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.5; background: #F9FAFB; color: #111827; }
+    /* ─── Reset ──────────────────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 15px; }
+    body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; background: #F9FAFB; color: #111827; }
+    button { font-family: inherit; cursor: pointer; }
+    input, select, textarea { font-family: inherit; }
 
-    /* Auth screen */
+    /* ─── Design tokens ──────────────────────────────────────────────────── */
+    :root {
+      --bg:        #F9FAFB;
+      --surface:   #FFFFFF;
+      --border:    #E5E7EB;
+      --text:      #111827;
+      --muted:     #6B7280;
+      --accent:    #2563EB;
+      --accent-h:  #1D4ED8;
+      --accent-bg: #EFF6FF;
+      --danger:    #DC2626;
+      --danger-bg: #FEF2F2;
+      --warning:   #D97706;
+      --warn-bg:   #FFFBEB;
+      --success:   #16A34A;
+      --success-bg:#F0FDF4;
+      --orange:    #F97316;
+      --orange-bg: #FFF7ED;
+      --radius:    8px;
+      --shadow:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    /* ─── Loading screen ─────────────────────────────────────────────────── */
+    #loading-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--bg);
+      flex-direction: column; gap: 12px;
+    }
+    #loading-screen .spinner { width: 28px; height: 28px; border-width: 3px; border-color: var(--border); border-top-color: var(--accent); }
+
+    /* ─── Auth screen ────────────────────────────────────────────────────── */
     #auth-screen {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: #F9FAFB;
+      display: none; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--bg);
     }
     .auth-box {
-      background: #FFFFFF;
-      border: 1px solid #E5E7EB;
-      border-radius: 8px;
-      padding: 40px;
-      width: 100%;
-      max-width: 360px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 40px;
+      width: 100%; max-width: 360px; box-shadow: var(--shadow);
     }
-    .auth-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
-    .auth-box p  { font-size: 14px; color: #6B7280; margin-bottom: 28px; }
-    .auth-box label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
-    .auth-box input {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #E5E7EB;
-      border-radius: 8px;
-      font-size: 15px;
-      font-family: system-ui, sans-serif;
-      outline: none;
-      margin-bottom: 20px;
-    }
-    .auth-box input:focus { border-color: #2563EB; }
-    .btn-primary {
-      width: 100%;
-      padding: 10px;
-      background: #2563EB;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .btn-primary:hover  { background: #1D4ED8; }
-    .btn-primary:disabled { background: #93C5FD; cursor: not-allowed; }
-    .auth-error { color: #DC2626; font-size: 13px; margin-top: 12px; display: none; }
-
-    /* Поле пароля с кнопкой показать/скрыть */
+    .auth-logo { font-size: 24px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+    .auth-sub  { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    .auth-box label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
     .password-wrap { position: relative; margin-bottom: 20px; }
     .password-wrap input { margin-bottom: 0; padding-right: 44px; }
     .toggle-pass {
       position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; cursor: pointer; color: #6B7280; font-size: 13px;
-      padding: 0;
+      background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1;
     }
-    .toggle-pass:hover { color: #111827; }
+    .toggle-pass:hover { color: var(--text); }
+    .auth-error { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
 
-    /* Спиннер загрузки */
-    .spinner {
-      display: inline-block; width: 14px; height: 14px;
-      border: 2px solid #fff; border-top-color: transparent;
-      border-radius: 50%; animation: spin 0.6s linear infinite;
-      margin-right: 8px; vertical-align: middle;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* App screen */
+    /* ─── App screen ─────────────────────────────────────────────────────── */
     #app-screen { display: none; min-height: 100vh; }
 
-    /* Navbar */
+    /* ─── Navbar ─────────────────────────────────────────────────────────── */
     .navbar {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 24px; height: 56px;
-      background: #FFFFFF; border-bottom: 1px solid #E5E7EB;
+      padding: 0 20px; height: 56px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
       position: sticky; top: 0; z-index: 100;
     }
-    .navbar-brand { font-weight: 700; font-size: 16px; color: #111827; }
-    .navbar-nav { display: flex; gap: 4px; }
+    .navbar-brand { font-weight: 800; font-size: 15px; color: var(--accent); white-space: nowrap; }
+    .navbar-nav { display: flex; gap: 2px; }
     .nav-link {
-      padding: 6px 14px; border-radius: 6px; font-size: 14px;
-      color: #6B7280; text-decoration: none; cursor: pointer;
-      background: none; border: none; font-family: system-ui, sans-serif;
+      padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 500;
+      color: var(--muted); background: none; border: none; white-space: nowrap;
     }
-    .nav-link:hover  { background: #F3F4F6; color: #111827; }
-    .nav-link.active { background: #EFF6FF; color: #2563EB; font-weight: 600; }
+    .nav-link:hover  { background: #F3F4F6; color: var(--text); }
+    .nav-link.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+    .navbar-right { display: flex; align-items: center; gap: 8px; }
     .btn-logout {
-      padding: 6px 14px; border-radius: 6px; font-size: 14px;
-      color: #DC2626; background: none; border: 1px solid #FECACA;
-      cursor: pointer; font-family: system-ui, sans-serif;
+      padding: 5px 12px; border-radius: 6px; font-size: 13px;
+      color: var(--danger); background: none; border: 1px solid #FECACA;
     }
-    .btn-logout:hover { background: #FEF2F2; }
+    .btn-logout:hover { background: var(--danger-bg); }
 
-    /* Page container */
-    .page { display: none; padding: 24px; }
+    /* Мобильное меню */
+    .burger { display: none; background: none; border: none; font-size: 20px; padding: 4px; }
+    .mobile-nav {
+      display: none; flex-direction: column; gap: 2px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+    }
+    .mobile-nav.open { display: flex; }
+    .mobile-nav .nav-link { text-align: left; }
+
+    /* ─── Page container ─────────────────────────────────────────────────── */
+    .page { display: none; padding: 24px; max-width: 1400px; margin: 0 auto; }
     .page.active { display: block; }
+    .page-header { margin-bottom: 20px; }
+    .page-title { font-size: 22px; font-weight: 700; color: var(--text); }
+    .page-sub   { font-size: 13px; color: var(--muted); margin-top: 2px; }
 
-    /* Loading overlay */
-    #loading-screen {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; background: #F9FAFB;
+    /* ─── Cards ──────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
     }
-    #loading-screen p { color: #6B7280; font-size: 14px; }
+    .card-body { padding: 20px; }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .stat-card { padding: 20px; }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+    .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ─── Buttons ────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius);
+      font-size: 13px; font-weight: 600; border: 1px solid transparent;
+      transition: background .15s;
+    }
+    .btn-primary  { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover  { background: var(--accent-h); }
+    .btn-primary:disabled { background: #93C5FD; cursor: not-allowed; }
+    .btn-outline  { background: var(--surface); color: var(--text); border-color: var(--border); }
+    .btn-outline:hover { background: #F3F4F6; }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #B91C1C; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-full { width: 100%; justify-content: center; }
+
+    /* ─── Inputs ─────────────────────────────────────────────────────────── */
+    .input, .select {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      font-size: 14px; background: var(--surface); color: var(--text);
+      outline: none;
+    }
+    .input:focus, .select:focus { border-color: var(--accent); }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ─── Table ──────────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); font-size: 13px; }
+    thead th {
+      padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); background: #F9FAFB;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody td { padding: 10px 12px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #FAFAFA; }
+
+    /* ─── Badges ─────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 99px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-green   { background: var(--success-bg); color: var(--success); }
+    .badge-red     { background: var(--danger-bg);  color: var(--danger); }
+    .badge-yellow  { background: var(--warn-bg);    color: var(--warning); }
+    .badge-blue    { background: var(--accent-bg);  color: var(--accent); }
+    .badge-gray    { background: #F3F4F6; color: var(--muted); }
+
+    /* ─── Empty state ────────────────────────────────────────────────────── */
+    .empty {
+      text-align: center; padding: 48px 24px;
+      color: var(--muted); font-size: 14px;
+    }
+    .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+    /* ─── Spinner ────────────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block; border-radius: 50%;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      animation: spin .6s linear infinite;
+    }
+    .spinner-sm { width: 14px; height: 14px; }
+    .spinner-md { width: 24px; height: 24px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Alerts ─────────────────────────────────────────────────────────── */
+    .alert { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; }
+    .alert-danger  { background: var(--danger-bg); color: var(--danger); border: 1px solid #FECACA; }
+    .alert-warning { background: var(--warn-bg);   color: var(--warning); border: 1px solid #FDE68A; }
+    .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid #BBF7D0; }
+
+    /* ─── Modal ──────────────────────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); z-index: 200;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(0,0,0,.15);
+      width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
+    }
+    .modal-header {
+      padding: 20px 20px 0; display: flex;
+      align-items: center; justify-content: space-between;
+    }
+    .modal-title { font-size: 16px; font-weight: 700; }
+    .modal-close { background: none; border: none; font-size: 20px; color: var(--muted); line-height: 1; }
+    .modal-close:hover { color: var(--text); }
+    .modal-body   { padding: 20px; }
+    .modal-footer { padding: 0 20px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ─── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .navbar-nav { display: none; }
+      .burger { display: block; }
+      .page { padding: 16px; }
+      .cards-grid { grid-template-columns: 1fr 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      .btn-logout span { display: none; }
+    }
+    @media (max-width: 480px) {
+      .cards-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
 
-  <!-- Экран входа -->
+  <!-- Загрузка -->
+  <div id="loading-screen">
+    <div class="spinner" style="width:28px;height:28px;border-width:3px;"></div>
+    <p style="color:var(--muted);font-size:13px;">Загрузка...</p>
+  </div>
+
+  <!-- Вход -->
   <div id="auth-screen">
     <div class="auth-box">
-      <h1>AI Табель</h1>
-      <p>Введите пароль для входа</p>
+      <div class="auth-logo">AI Табель</div>
+      <div class="auth-sub">Система учёта рабочего времени</div>
       <label for="password">Пароль</label>
       <div class="password-wrap">
-        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
-        <button class="toggle-pass" onclick="togglePass()" type="button" title="Показать пароль">👁</button>
+        <input class="input" type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        <button class="toggle-pass" onclick="togglePass()" type="button">👁</button>
       </div>
-      <button class="btn-primary" id="login-btn" onclick="signIn()">Войти</button>
+      <button class="btn btn-primary btn-full" id="login-btn" onclick="signIn()">Войти</button>
       <div class="auth-error" id="auth-error">Неверный пароль. Попробуйте ещё раз.</div>
     </div>
   </div>
 
-  <!-- Экран загрузки (пока проверяем сессию) -->
-  <div id="loading-screen">
-    <p>Загрузка...</p>
-  </div>
-
-  <!-- Основное приложение (загружается после входа) -->
+  <!-- Приложение -->
   <div id="app-screen">
     <nav class="navbar">
       <span class="navbar-brand">AI Табель</span>
       <div class="navbar-nav">
-        <button class="nav-link active" onclick="navigateTo('overview')">Обзор</button>
-        <button class="nav-link" onclick="navigateTo('timesheet')">Табель</button>
-        <button class="nav-link" onclick="navigateTo('attendance')">Посещаемость</button>
-        <button class="nav-link" onclick="navigateTo('employees')">Сотрудники</button>
-        <button class="nav-link" onclick="navigateTo('review')">Проверка</button>
-        <button class="nav-link" onclick="navigateTo('analytics')">Аналитика</button>
-        <button class="nav-link" onclick="navigateTo('logs')">Логи</button>
+        <button class="nav-link active" onclick="navigateTo('overview',   this)">Обзор</button>
+        <button class="nav-link"        onclick="navigateTo('timesheet',  this)">Табель</button>
+        <button class="nav-link"        onclick="navigateTo('attendance', this)">Посещаемость</button>
+        <button class="nav-link"        onclick="navigateTo('employees',  this)">Сотрудники</button>
+        <button class="nav-link"        onclick="navigateTo('review',     this)">Проверка</button>
+        <button class="nav-link"        onclick="navigateTo('analytics',  this)">Аналитика</button>
+        <button class="nav-link"        onclick="navigateTo('logs',       this)">Логи</button>
       </div>
-      <button class="btn-logout" onclick="signOut()">Выйти</button>
+      <div class="navbar-right">
+        <button class="btn-logout" onclick="signOut()"><span>Выйти</span></button>
+        <button class="burger" onclick="toggleMenu()">☰</button>
+      </div>
     </nav>
 
+    <!-- Мобильное меню -->
+    <div class="mobile-nav" id="mobile-nav">
+      <button class="nav-link" onclick="navigateTo('overview',   this);closeMobileMenu()">Обзор</button>
+      <button class="nav-link" onclick="navigateTo('timesheet',  this);closeMobileMenu()">Табель</button>
+      <button class="nav-link" onclick="navigateTo('attendance', this);closeMobileMenu()">Посещаемость</button>
+      <button class="nav-link" onclick="navigateTo('employees',  this);closeMobileMenu()">Сотрудники</button>
+      <button class="nav-link" onclick="navigateTo('review',     this);closeMobileMenu()">Проверка</button>
+      <button class="nav-link" onclick="navigateTo('analytics',  this);closeMobileMenu()">Аналитика</button>
+      <button class="nav-link" onclick="navigateTo('logs',       this);closeMobileMenu()">Логи</button>
+    </div>
+
+    <!-- Страницы -->
     <div class="page active" id="page-overview">
-      <h2>Обзор</h2>
+      <div class="page-header">
+        <div class="page-title">Обзор</div>
+        <div class="page-sub">Сводка за сегодня</div>
+      </div>
+      <div class="cards-grid">
+        <div class="card stat-card">
+          <div class="stat-label">На объекте сегодня</div>
+          <div class="stat-value" id="stat-today">—</div>
+          <div class="stat-sub">сотрудников</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Требуют проверки</div>
+          <div class="stat-value" style="color:var(--danger)" id="stat-review">—</div>
+          <div class="stat-sub">needs_review</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Всего сотрудников</div>
+          <div class="stat-value" id="stat-employees">—</div>
+          <div class="stat-sub">в базе</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Фото сегодня</div>
+          <div class="stat-value" id="stat-photos">—</div>
+          <div class="stat-sub">обработано</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">📊</div>
+            Данные появятся после подключения Telegram-бота
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-timesheet">
-      <h2>Табель</h2>
+      <div class="page-header">
+        <div class="page-title">Табель</div>
+        <div class="page-sub">Учёт рабочего времени по периодам</div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">📋</div>
+            Страница Табель — в разработке
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-attendance">
-      <h2>Посещаемость</h2>
+      <div class="page-header">
+        <div class="page-title">Посещаемость</div>
+        <div class="page-sub">Отметки прихода и ухода</div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">🕐</div>
+            Страница Посещаемость — в разработке
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-employees">
-      <h2>Сотрудники</h2>
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div>
+          <div class="page-title">Сотрудники</div>
+          <div class="page-sub" id="emp-sub">Загрузка...</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input class="input" style="width:210px;" id="emp-search" placeholder="Поиск..." oninput="filterEmployees()">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap;">
+            <input type="checkbox" id="emp-show-archived" onchange="loadEmployees()"> Архивные
+          </label>
+          <button class="btn btn-outline" onclick="openModal('modal-import')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+            Импорт CSV
+          </button>
+          <button class="btn btn-primary" onclick="openEmployeeModal()">+ Добавить</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="padding:0;">
+          <div class="empty" id="emp-empty" style="display:none;padding:48px 24px;">
+            <div class="empty-icon">👷</div>
+            Сотрудников не найдено
+          </div>
+          <div class="table-wrap" id="emp-table-wrap" style="border:none;border-radius:0;">
+            <table id="emp-table">
+              <thead>
+                <tr>
+                  <th>Сотрудник</th>
+                  <th>Должность</th>
+                  <th>Бригада</th>
+                  <th>Ставка/день</th>
+                  <th>Ставка/час</th>
+                  <th>Статус</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="emp-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-review">
-      <h2>Проверка</h2>
+      <div class="page-header">
+        <div class="page-title">Проверка</div>
+        <div class="page-sub">Фото требующие ручной проверки</div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">✅</div>
+            Записей для проверки нет
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-analytics">
-      <h2>Аналитика</h2>
+      <div class="page-header">
+        <div class="page-title">Аналитика</div>
+        <div class="page-sub">Графики и статистика ФОТ</div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">📈</div>
+            Страница Аналитика — в разработке
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="page" id="page-logs">
-      <h2>Логи</h2>
+      <div class="page-header">
+        <div class="page-title">Логи</div>
+        <div class="page-sub">Журнал событий системы</div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="empty">
+            <div class="empty-icon">📝</div>
+            Логи пусты
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: добавить / редактировать сотрудника -->
+  <div class="modal-backdrop" id="modal-employee">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="emp-modal-title">Новый сотрудник</span>
+        <button class="modal-close" onclick="closeModal('modal-employee')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger" id="emp-form-error" style="display:none;"></div>
+        <input type="hidden" id="emp-form-id">
+        <div class="form-group">
+          <label class="form-label">Имя / ФИО <span style="color:var(--danger)">*</span></label>
+          <input class="input" type="text" id="emp-form-name" placeholder="Как написано на фото (напр. «Дима»)">
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Должно совпадать с подписью на фото из Telegram</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Должность</label>
+            <input class="input" type="text" id="emp-form-position" placeholder="Монтажник">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Бригада</label>
+            <input class="input" type="text" id="emp-form-team" placeholder="Бригада 1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Дневная ставка, ₽ <span style="color:var(--danger)">*</span></label>
+            <input class="input" type="number" id="emp-form-rate" placeholder="2000" min="0" step="1" oninput="updateRateHint()">
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="emp-rate-hint"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ставка в час, ₽</label>
+            <input class="input" type="text" id="emp-form-hourly" placeholder="Авто" readonly
+              style="background:#F9FAFB;color:var(--muted);cursor:default;">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Эталонное фото</label>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div id="emp-photo-preview"
+              style="width:72px;height:72px;border-radius:var(--radius);border:2px dashed var(--border);
+                background:#F9FAFB;display:flex;align-items:center;justify-content:center;
+                font-size:30px;overflow:hidden;flex-shrink:0;cursor:pointer;"
+              onclick="document.getElementById('emp-photo-input').click()">👤</div>
+            <div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" class="btn btn-outline btn-sm"
+                  onclick="document.getElementById('emp-photo-input').click()">Выбрать фото</button>
+                <button type="button" class="btn btn-sm" id="emp-photo-clear"
+                  style="display:none;color:var(--danger);background:var(--danger-bg);border:1px solid #FECACA;"
+                  onclick="clearEmpPhoto()">Убрать</button>
+              </div>
+              <div style="font-size:12px;color:var(--muted);margin-top:6px;">JPG / PNG, лицо крупным планом</div>
+              <input type="file" id="emp-photo-input" accept="image/*" style="display:none" onchange="empPhotoSelected(this)">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-employee')">Отмена</button>
+        <button class="btn btn-primary" id="emp-save-btn" onclick="saveEmployee()">Добавить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: импорт сотрудников -->
+  <div class="modal-backdrop" id="modal-import">
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-header">
+        <span class="modal-title">Импорт сотрудников</span>
+        <button class="modal-close" onclick="closeImportModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Шаг 1: загрузка файла -->
+        <div id="import-step-upload">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+            Поддерживаются <strong>CSV</strong> и <strong>TSV</strong> файлы, а также вставка из Excel (Ctrl+C → Ctrl+V).<br>
+            Порядок столбцов: <code style="background:#F3F4F6;padding:1px 5px;border-radius:4px;">Имя; Должность; Бригада; Ставка/день</code>
+          </div>
+          <div id="import-dropzone"
+            style="border:2px dashed var(--border);border-radius:var(--radius);padding:28px;text-align:center;
+              cursor:pointer;transition:border-color .2s,background .2s;"
+            onclick="document.getElementById('import-file-input').click()"
+            ondragover="importDragOver(event)" ondragleave="importDragLeave(event)" ondrop="importDrop(event)">
+            <div style="font-size:28px;margin-bottom:8px;">📂</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Перетащите файл или нажмите для выбора</div>
+            <div style="font-size:12px;color:var(--muted);">.csv, .tsv, .txt</div>
+            <input type="file" id="import-file-input" accept=".csv,.tsv,.txt" style="display:none" onchange="importFileSelected(this)">
+          </div>
+          <div style="text-align:center;margin:10px 0;color:var(--muted);font-size:12px;">— или вставьте данные из Excel —</div>
+          <textarea class="input" id="import-paste" rows="5"
+            placeholder="Вставьте строки из Excel (Ctrl+V). Первая строка — шапка (пропускается автоматически)."
+            style="resize:vertical;font-size:12px;font-family:monospace;"
+            oninput="importPasteInput(this)"></textarea>
+          <div class="alert alert-danger" id="import-parse-error" style="display:none;margin-top:12px;"></div>
+          <div style="margin-top:12px;">
+            <button class="btn btn-outline btn-sm" onclick="downloadSampleCsv()">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+              Скачать пример CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Шаг 2: предпросмотр -->
+        <div id="import-step-preview" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div id="import-preview-info" style="font-size:13px;font-weight:600;"></div>
+            <button class="btn btn-outline btn-sm" onclick="importReset()">← Назад</button>
+          </div>
+          <div class="alert alert-warning" id="import-preview-warn" style="display:none;margin-bottom:10px;"></div>
+          <div style="max-height:260px;overflow-y:auto;border-radius:var(--radius);border:1px solid var(--border);">
+            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+              <thead>
+                <tr style="background:#F9FAFB;">
+                  <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Имя</th>
+                  <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Должность</th>
+                  <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Бригада</th>
+                  <th style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Ставка/день</th>
+                  <th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Статус</th>
+                </tr>
+              </thead>
+              <tbody id="import-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Шаг 3: результат -->
+        <div id="import-step-result" style="display:none;text-align:center;padding:12px 0;">
+          <div id="import-result-icon" style="font-size:40px;margin-bottom:10px;"></div>
+          <div id="import-result-text" style="font-size:15px;font-weight:600;margin-bottom:6px;"></div>
+          <div id="import-result-sub" style="font-size:13px;color:var(--muted);"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeImportModal()">Закрыть</button>
+        <button class="btn btn-primary" id="import-confirm-btn" style="display:none;" onclick="runImport()">Загрузить</button>
+      </div>
     </div>
   </div>
 
   <script>
-    // ─── Конфигурация Supabase ───────────────────────────────────────────────
-    const SUPABASE_URL  = 'https://weqvsquaftkxrafybrnk.supabase.co';
-    const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlcXZzcXVhZnRreHJhZnlicm5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDA2NjYsImV4cCI6MjA5MjI3NjY2Nn0.ZGI8lprQ_RfZY6pyA003rs2HcICWLne_GrS90LDzkzg';
-    const ADMIN_EMAIL   = 'admin@dashboard.local';
+    /* ─── Конфигурация Supabase ─────────────────────────────────────────── */
+    const SUPABASE_URL = 'https://weqvsquaftkxrafybrnk.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlcXZzcXVhZnRreHJhZnlicm5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDA2NjYsImV4cCI6MjA5MjI3NjY2Nn0.ZGI8lprQ_RfZY6pyA003rs2HcICWLne_GrS90LDzkzg';
+    const ADMIN_EMAIL  = 'admin@dashboard.local';
 
-    // ─── Auth helpers ────────────────────────────────────────────────────────
+    /* ─── Supabase helpers ──────────────────────────────────────────────── */
     async function supabasePost(path, body) {
       const res = await fetch(`${SUPABASE_URL}${path}`, {
         method: 'POST',
@@ -201,29 +616,41 @@
       return res.json();
     }
 
+    async function guardedFetch(path, options = {}) {
+      const data = await supabaseFetch(path, options);
+      if (data && (data.message === 'JWT expired' || data.code === 'PGRST301')) {
+        localStorage.removeItem('sb_token');
+        showAuth();
+        return null;
+      }
+      return data;
+    }
+
+    function getToken() { return localStorage.getItem('sb_token'); }
+
+    /* ─── Auth ──────────────────────────────────────────────────────────── */
     function togglePass() {
-      const input = document.getElementById('password');
-      input.type = input.type === 'password' ? 'text' : 'password';
+      const inp = document.getElementById('password');
+      inp.type = inp.type === 'password' ? 'text' : 'password';
     }
 
     async function signIn() {
       const password = document.getElementById('password').value.trim();
       if (!password) return;
-
       const btn = document.getElementById('login-btn');
       const err = document.getElementById('auth-error');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>Вхожу...';
+      btn.innerHTML = '<span class="spinner spinner-sm"></span> Вхожу...';
       err.style.display = 'none';
 
       const data = await supabasePost('/auth/v1/token?grant_type=password', {
-        email: ADMIN_EMAIL,
-        password: password
+        email: ADMIN_EMAIL, password
       });
 
       if (data.access_token) {
         localStorage.setItem('sb_token', data.access_token);
         showApp();
+        loadOverview();
       } else {
         err.style.display = 'block';
         btn.disabled = false;
@@ -237,19 +664,11 @@
       showAuth();
     }
 
-    function getToken() {
-      return localStorage.getItem('sb_token');
-    }
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') signIn();
+    });
 
-    // ─── Навигация между страницами ──────────────────────────────────────────
-    function navigateTo(page) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-      document.getElementById('page-' + page).classList.add('active');
-      event.currentTarget.classList.add('active');
-    }
-
-    // ─── Экраны ──────────────────────────────────────────────────────────────
+    /* ─── Screens ───────────────────────────────────────────────────────── */
     function showAuth() {
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('auth-screen').style.display    = 'flex';
@@ -262,36 +681,440 @@
       document.getElementById('app-screen').style.display     = 'block';
     }
 
-    // ─── Защита: проверка токена перед каждым запросом к API ─────────────────
-    async function guardedFetch(path, options = {}) {
-      const data = await supabaseFetch(path, options);
-      if (data.message === 'JWT expired' || data.code === 'PGRST301') {
-        localStorage.removeItem('sb_token');
-        showAuth();
-        return null;
-      }
-      return data;
+    /* ─── Navigation ────────────────────────────────────────────────────── */
+    function navigateTo(page, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      if (btn) btn.classList.add('active');
+      if (page === 'employees') loadEmployees();
     }
 
-    // ─── Вход по Enter ───────────────────────────────────────────────────────
-    document.getElementById('password').addEventListener('keydown', e => {
-      if (e.key === 'Enter') signIn();
-    });
+    function toggleMenu() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
 
-    // ─── Проверка сессии при загрузке ────────────────────────────────────────
+    function closeMobileMenu() {
+      document.getElementById('mobile-nav').classList.remove('open');
+    }
+
+    /* ─── Modals ────────────────────────────────────────────────────────── */
+    function openModal(id)  { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    /* ─── Overview data ─────────────────────────────────────────────────── */
+    async function loadOverview() {
+      const today = new Date().toISOString().slice(0, 10);
+
+      const [employees, todayEvents, reviewEvents] = await Promise.all([
+        guardedFetch('/rest/v1/employees?select=id&deleted_at=is.null'),
+        guardedFetch(`/rest/v1/events?select=id&photo_timestamp=gte.${today}T00:00:00&status=eq.done`),
+        guardedFetch('/rest/v1/events?select=id&status=eq.needs_review')
+      ]);
+
+      const unique = new Set((todayEvents || []).map(e => e.employee_id));
+      document.getElementById('stat-today').textContent     = unique.size || 0;
+      document.getElementById('stat-employees').textContent = (employees || []).length;
+      document.getElementById('stat-review').textContent    = (reviewEvents || []).length;
+      document.getElementById('stat-photos').textContent    = (todayEvents || []).length;
+    }
+
+    /* ─── Import ────────────────────────────────────────────────────────── */
+    let importRows = [];
+
+    function closeImportModal() {
+      closeModal('modal-import');
+      setTimeout(importReset, 300);
+    }
+
+    function importReset() {
+      importRows = [];
+      document.getElementById('import-step-upload').style.display   = '';
+      document.getElementById('import-step-preview').style.display  = 'none';
+      document.getElementById('import-step-result').style.display   = 'none';
+      document.getElementById('import-confirm-btn').style.display   = 'none';
+      document.getElementById('import-parse-error').style.display   = 'none';
+      document.getElementById('import-paste').value = '';
+      document.getElementById('import-file-input').value = '';
+      document.getElementById('import-dropzone').style.background   = '';
+      document.getElementById('import-dropzone').style.borderColor  = '';
+    }
+
+    function importDragOver(e) {
+      e.preventDefault();
+      document.getElementById('import-dropzone').style.borderColor = 'var(--accent)';
+      document.getElementById('import-dropzone').style.background  = 'var(--accent-bg)';
+    }
+    function importDragLeave(e) {
+      document.getElementById('import-dropzone').style.borderColor = '';
+      document.getElementById('import-dropzone').style.background  = '';
+    }
+    function importDrop(e) {
+      e.preventDefault();
+      importDragLeave(e);
+      const file = e.dataTransfer.files[0];
+      if (file) readImportFile(file);
+    }
+    function importFileSelected(input) {
+      if (input.files[0]) readImportFile(input.files[0]);
+    }
+    function readImportFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => parseAndPreview(e.target.result);
+      reader.readAsText(file, 'utf-8');
+    }
+    function importPasteInput(ta) {
+      if (ta.value.trim()) parseAndPreview(ta.value);
+    }
+
+    function detectDelimiter(text) {
+      const line = text.split('\n')[0];
+      const tabs   = (line.match(/\t/g)   || []).length;
+      const semis  = (line.match(/;/g)    || []).length;
+      const commas = (line.match(/,/g)    || []).length;
+      if (tabs > 0)   return '\t';
+      if (semis > 0)  return ';';
+      return ',';
+    }
+
+    const HEADER_HINTS = ['имя','name','фио','сотрудник','должность','бригада','ставка','rate','position','team'];
+    function looksLikeHeader(cells) {
+      const joined = cells.join(' ').toLowerCase();
+      return HEADER_HINTS.some(h => joined.includes(h));
+    }
+
+    function parseAndPreview(text) {
+      const errEl = document.getElementById('import-parse-error');
+      errEl.style.display = 'none';
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { errEl.textContent = 'Файл пустой'; errEl.style.display = 'block'; return; }
+      const delim = detectDelimiter(text);
+      const rows  = lines.map(l => l.split(delim).map(c => c.trim().replace(/^["']|["']$/g, '')));
+      let startIdx = 0;
+      if (rows.length > 1 && looksLikeHeader(rows[0])) startIdx = 1;
+      const parsed = [];
+      const warnings = [];
+      rows.slice(startIdx).forEach((cells, i) => {
+        if (!cells.length || cells.every(c => !c)) return;
+        const name  = cells[0] || '';
+        const pos   = cells[1] || '';
+        const team  = cells[2] || '';
+        const rate  = parseFloat((cells[3] || '').replace(/[^\d.,-]/g,'').replace(',','.'));
+        const valid = name.trim().length > 0 && !isNaN(rate) && rate > 0;
+        if (!valid) warnings.push(`Строка ${startIdx + i + 1}: пропущена (нет имени или ставки)`);
+        else parsed.push({ display_name: name.trim(), position: pos || null, team: team || null, daily_rate: rate });
+      });
+      if (!parsed.length) {
+        errEl.textContent = 'Не найдено ни одной корректной строки. Проверьте формат: Имя; Должность; Бригада; Ставка/день';
+        errEl.style.display = 'block'; return;
+      }
+      importRows = parsed;
+      showImportPreview(parsed, warnings);
+    }
+
+    function showImportPreview(rows, warnings) {
+      document.getElementById('import-step-upload').style.display  = 'none';
+      document.getElementById('import-step-preview').style.display = '';
+      document.getElementById('import-confirm-btn').style.display  = '';
+      document.getElementById('import-preview-info').textContent   = `Найдено ${rows.length} сотрудников для импорта`;
+      const warnEl = document.getElementById('import-preview-warn');
+      if (warnings.length) {
+        warnEl.textContent = warnings.join(' · ');
+        warnEl.style.display = 'block';
+      } else { warnEl.style.display = 'none'; }
+      document.getElementById('import-preview-tbody').innerHTML = rows.map(r => `
+        <tr style="border-bottom:1px solid #F3F4F6;">
+          <td style="padding:7px 10px;font-weight:500;">${escHtml(r.display_name)}</td>
+          <td style="padding:7px 10px;color:var(--muted);">${escHtml(r.position || '—')}</td>
+          <td style="padding:7px 10px;">${escHtml(r.team || '—')}</td>
+          <td style="padding:7px 10px;text-align:right;">${r.daily_rate.toLocaleString('ru')} ₽</td>
+          <td style="padding:7px 10px;text-align:center;"><span class="badge badge-green">OK</span></td>
+        </tr>`).join('');
+    }
+
+    async function runImport() {
+      const btn = document.getElementById('import-confirm-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-sm"></span> Загружаю...';
+      const CHUNK = 50;
+      let added = 0, errors = 0;
+      for (let i = 0; i < importRows.length; i += CHUNK) {
+        const chunk = importRows.slice(i, i + CHUNK);
+        const res = await supabaseFetch('/rest/v1/employees', {
+          method: 'POST',
+          headers: { 'Prefer': 'return=minimal' },
+          body: JSON.stringify(chunk)
+        });
+        if (res && (res.message || res.error || res.code)) errors += chunk.length;
+        else added += chunk.length;
+      }
+      btn.disabled = false;
+      btn.textContent = 'Загрузить';
+      document.getElementById('import-step-preview').style.display = 'none';
+      document.getElementById('import-confirm-btn').style.display  = 'none';
+      document.getElementById('import-step-result').style.display  = '';
+      document.getElementById('import-result-icon').textContent  = errors === 0 ? '✅' : '⚠️';
+      document.getElementById('import-result-text').textContent  = errors === 0
+        ? `${added} сотрудников успешно добавлено`
+        : `Добавлено: ${added}, ошибок: ${errors}`;
+      document.getElementById('import-result-sub').textContent   = 'Перейдите на страницу Сотрудники для просмотра';
+      loadEmployees();
+    }
+
+    function downloadSampleCsv() {
+      const csv = 'Имя;Должность;Бригада;Ставка/день\nИванов Иван;Монтажник;Бригада 1;2000\nПетров Пётр;Сварщик;Бригада 1;2200\nСидоров Сидор;Разнорабочий;Бригада 2;1800';
+      const a = document.createElement('a');
+      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      a.download = 'employees_sample.csv';
+      a.click();
+    }
+
+    /* ─── Employees ─────────────────────────────────────────────────────── */
+    let allEmployees = [];
+
+    async function loadEmployees() {
+      const archived = document.getElementById('emp-show-archived').checked;
+      const filter   = archived ? 'deleted_at=not.is.null' : 'deleted_at=is.null';
+      const data = await guardedFetch(`/rest/v1/employees?select=*&${filter}&order=team.asc,display_name.asc`);
+      if (!data) return;
+      allEmployees = data;
+      document.getElementById('emp-sub').textContent = archived
+        ? `${data.length} архивных сотрудников`
+        : `${data.length} активных сотрудников`;
+      filterEmployees();
+    }
+
+    function filterEmployees() {
+      const q = document.getElementById('emp-search').value.toLowerCase();
+      const filtered = q
+        ? allEmployees.filter(e =>
+            e.display_name.toLowerCase().includes(q) ||
+            (e.team     || '').toLowerCase().includes(q) ||
+            (e.position || '').toLowerCase().includes(q))
+        : allEmployees;
+      renderEmployees(filtered);
+    }
+
+    function renderEmployees(list) {
+      const tbody     = document.getElementById('emp-tbody');
+      const empty     = document.getElementById('emp-empty');
+      const tableWrap = document.getElementById('emp-table-wrap');
+      if (!list.length) {
+        tableWrap.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+      tableWrap.style.display = '';
+      empty.style.display = 'none';
+      tbody.innerHTML = list.map(emp => {
+        const initials = emp.display_name.trim().split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+        const hourly   = emp.hourly_rate ? parseFloat(emp.hourly_rate).toFixed(2) + ' ₽' : '—';
+        const archived = !!emp.deleted_at;
+        const actions  = archived
+          ? `<button class="btn btn-outline btn-sm" onclick="restoreEmployee('${emp.id}')">Восстановить</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="editEmployee('${emp.id}')">Изменить</button>
+             <button class="btn btn-sm" style="background:var(--warn-bg);color:var(--warning);border:1px solid #FDE68A;"
+               onclick="archiveEmployee('${emp.id}','${escHtml(emp.display_name)}')">В архив</button>`;
+        return `<tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:32px;height:32px;border-radius:50%;background:var(--accent-bg);color:var(--accent);
+                display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${initials}</div>
+              <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
+            </div>
+          </td>
+          <td style="color:var(--muted)">${escHtml(emp.position || '—')}</td>
+          <td>${escHtml(emp.team || '—')}</td>
+          <td>${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') + ' ₽' : '—'}</td>
+          <td style="color:var(--muted)">${hourly}</td>
+          <td>${archived
+            ? '<span class="badge badge-gray">Архив</span>'
+            : '<span class="badge badge-green">Активен</span>'}</td>
+          <td><div style="display:flex;gap:6px;justify-content:flex-end;">${actions}</div></td>
+        </tr>`;
+      }).join('');
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function resetEmpPhotoUI() {
+      const preview = document.getElementById('emp-photo-preview');
+      preview.innerHTML = '👤';
+      preview.style.border = '2px dashed var(--border)';
+      document.getElementById('emp-photo-input').value  = '';
+      document.getElementById('emp-photo-clear').style.display = 'none';
+      window._empPhotoFile = null;
+    }
+
+    function empPhotoSelected(input) {
+      const file = input.files[0];
+      if (!file) return;
+      window._empPhotoFile = file;
+      const url = URL.createObjectURL(file);
+      const preview = document.getElementById('emp-photo-preview');
+      preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+      preview.style.border = '2px solid var(--accent)';
+      document.getElementById('emp-photo-clear').style.display = '';
+    }
+
+    function clearEmpPhoto() {
+      resetEmpPhotoUI();
+    }
+
+    function openEmployeeModal() {
+      document.getElementById('emp-form-id').value       = '';
+      document.getElementById('emp-form-name').value     = '';
+      document.getElementById('emp-form-position').value = '';
+      document.getElementById('emp-form-team').value     = '';
+      document.getElementById('emp-form-rate').value     = '';
+      document.getElementById('emp-form-hourly').value   = '';
+      document.getElementById('emp-form-error').style.display = 'none';
+      document.getElementById('emp-modal-title').textContent  = 'Новый сотрудник';
+      document.getElementById('emp-save-btn').textContent     = 'Добавить';
+      resetEmpPhotoUI();
+      openModal('modal-employee');
+      setTimeout(() => document.getElementById('emp-form-name').focus(), 80);
+    }
+
+    async function editEmployee(id) {
+      const emp = allEmployees.find(e => e.id === id);
+      if (!emp) return;
+      document.getElementById('emp-form-id').value       = emp.id;
+      document.getElementById('emp-form-name').value     = emp.display_name;
+      document.getElementById('emp-form-position').value = emp.position || '';
+      document.getElementById('emp-form-team').value     = emp.team || '';
+      document.getElementById('emp-form-rate').value     = emp.daily_rate || '';
+      document.getElementById('emp-form-hourly').value   = emp.daily_rate ? (emp.daily_rate / 8).toFixed(2) : '';
+      document.getElementById('emp-form-error').style.display = 'none';
+      document.getElementById('emp-modal-title').textContent  = 'Редактировать сотрудника';
+      document.getElementById('emp-save-btn').textContent     = 'Сохранить';
+      resetEmpPhotoUI();
+      if (emp.ref_photo_url) {
+        const signedUrl = await getSignedUrl(emp.ref_photo_url);
+        if (signedUrl) {
+          const preview = document.getElementById('emp-photo-preview');
+          preview.innerHTML = `<img src="${signedUrl}" style="width:100%;height:100%;object-fit:cover;">`;
+          preview.style.border = '2px solid var(--border)';
+        }
+      }
+      openModal('modal-employee');
+    }
+
+    function updateRateHint() {
+      const rate = parseFloat(document.getElementById('emp-form-rate').value);
+      document.getElementById('emp-rate-hint').textContent = '';
+      document.getElementById('emp-form-hourly').value = rate > 0 ? (rate / 8).toFixed(2) : '';
+    }
+
+    async function saveEmployee() {
+      const id         = document.getElementById('emp-form-id').value;
+      const name       = document.getElementById('emp-form-name').value.trim();
+      const position   = document.getElementById('emp-form-position').value.trim();
+      const team       = document.getElementById('emp-form-team').value.trim();
+      const daily_rate = parseFloat(document.getElementById('emp-form-rate').value);
+      const errEl      = document.getElementById('emp-form-error');
+      const btn        = document.getElementById('emp-save-btn');
+      errEl.style.display = 'none';
+      if (!name)               { errEl.textContent = 'Введите имя сотрудника'; errEl.style.display = 'block'; return; }
+      if (!daily_rate || daily_rate <= 0) { errEl.textContent = 'Укажите дневную ставку'; errEl.style.display = 'block'; return; }
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.innerHTML = '<span class="spinner spinner-sm"></span>';
+
+      const body = { display_name: name, position: position || null, team: team || null, daily_rate };
+      let savedId = id;
+
+      if (id) {
+        const res = await supabaseFetch(`/rest/v1/employees?id=eq.${id}`,
+          { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) });
+        if (!res || res.message || res.error || res.code) {
+          btn.disabled = false; btn.textContent = origText;
+          errEl.textContent = (res && res.message) || 'Ошибка сохранения';
+          errEl.style.display = 'block'; return;
+        }
+      } else {
+        const res = await supabaseFetch('/rest/v1/employees',
+          { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) });
+        if (!res || res.message || res.error || res.code || !res[0]) {
+          btn.disabled = false; btn.textContent = origText;
+          errEl.textContent = (res && res.message) || 'Ошибка создания';
+          errEl.style.display = 'block'; return;
+        }
+        savedId = res[0].id;
+      }
+
+      if (window._empPhotoFile && savedId) {
+        btn.innerHTML = '<span class="spinner spinner-sm"></span> Фото...';
+        const photoPath = await uploadRefPhoto(savedId, window._empPhotoFile);
+        if (photoPath) {
+          await supabaseFetch(`/rest/v1/employees?id=eq.${savedId}`,
+            { method: 'PATCH', body: JSON.stringify({ ref_photo_url: photoPath }) });
+        }
+      }
+
+      btn.disabled = false; btn.textContent = origText;
+      closeModal('modal-employee');
+      loadEmployees();
+    }
+
+    async function uploadRefPhoto(employeeId, file) {
+      const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${employeeId}/ref.${ext}`;
+      const res  = await fetch(`${SUPABASE_URL}/storage/v1/object/ref-photos/${path}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'apikey': SUPABASE_KEY,
+          'Content-Type': file.type || 'image/jpeg',
+          'x-upsert': 'true'
+        },
+        body: file
+      });
+      if (!res.ok) return null;
+      return `ref-photos/${path}`;
+    }
+
+    async function getSignedUrl(storagePath) {
+      const slash  = storagePath.indexOf('/');
+      const bucket = storagePath.slice(0, slash);
+      const obj    = storagePath.slice(slash + 1);
+      const res = await supabaseFetch(`/storage/v1/object/sign/${bucket}/${obj}`, {
+        method: 'POST', body: JSON.stringify({ expiresIn: 3600 })
+      });
+      if (res && res.signedURL) return `${SUPABASE_URL}${res.signedURL}`;
+      return null;
+    }
+
+    async function archiveEmployee(id, name) {
+      if (!confirm(`Архивировать сотрудника «${name}»?\n\nВся история часов сохранится.`)) return;
+      await supabaseFetch(`/rest/v1/employees?id=eq.${id}`, {
+        method: 'PATCH', body: JSON.stringify({ deleted_at: new Date().toISOString() })
+      });
+      loadEmployees();
+    }
+
+    async function restoreEmployee(id) {
+      await supabaseFetch(`/rest/v1/employees?id=eq.${id}`, {
+        method: 'PATCH', body: JSON.stringify({ deleted_at: null })
+      });
+      loadEmployees();
+    }
+
+    /* ─── Init ──────────────────────────────────────────────────────────── */
     (async function init() {
       const token = getToken();
       if (!token) { showAuth(); return; }
-
       const data = await supabaseFetch('/auth/v1/user');
-      if (data.id) {
+      if (data && data.id) {
         showApp();
+        loadOverview();
       } else {
         localStorage.removeItem('sb_token');
         showAuth();
       }
     })();
   </script>
-
 </body>
 </html>
