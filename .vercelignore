@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Development
+node_modules
+*.log
+.env.local
+.env.*.local
+
+# Python AI Worker (deployed separately via GitHub Actions)
+ai-worker/
+.venv/
+__pycache__/
+*.pyc
+
+# Tests
+tests/
+*.test.js
+*.spec.js
+
+# Docs & project files
+*.md
+research.md
+project.md
+supabase/
+
+# Build artifacts
+.next
+dist/
+build/

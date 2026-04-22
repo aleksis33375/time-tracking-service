@@ -125,6 +125,6 @@
 
 ## Фаза 9 — Финал
 - [x] Тестирование на реальных данных (end-to-end)
-- [ ] Деплой Dashboard + Bot на Vercel
+- [x] Деплой Dashboard + Bot на Vercel
 - [ ] AI Worker GitHub Actions в продакшн-режиме
 - [ ] Документация для клиента
