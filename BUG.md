@@ -523,12 +523,12 @@ function validateEmployeeRow(row) {
 | 004 | Нет timeout для face recognition | process_events.py | 🟠 | Performance | ✅ ИСПРАВЛЕНО |
 | 005 | Нет безопасного парсинга fraud_flags | index.html | 🟠 | Error Handling | ✅ ИСПРАВЛЕНО |
 | 006 | Нет проверки localStorage | index.html | 🟠 | Robustness | ✅ ИСПРАВЛЕНО |
-| 007 | Нет обработки сетевых ошибок | index.html | 🟡 | Error Handling | ⏳ TODO |
-| 008 | Нет валидации входных данных | index.html | 🟡 | Validation | ⏳ TODO |
-| 009 | Потенциальная XSS | index.html | 🟡 | Security | ⏳ TODO |
-| 010 | Нет проверки результата upload | index.html | 🟡 | Error Handling | ⏳ TODO |
-| 011 | Нет проверки пустого экспорта | index.html | 🟡 | UX | ⏳ TODO |
-| 012 | Нет валидации CSV импорта | index.html | 🟡 | Validation | ⏳ TODO |
+| 007 | Нет обработки сетевых ошибок | index.html | 🟡 | Error Handling | ✅ ИСПРАВЛЕНО |
+| 008 | Нет валидации входных данных | index.html | 🟡 | Validation | ✅ ИСПРАВЛЕНО |
+| 009 | Потенциальная XSS | index.html | 🟡 | Security | ✅ ИСПРАВЛЕНО |
+| 010 | Нет проверки результата upload | index.html | 🟡 | Error Handling | ✅ ИСПРАВЛЕНО |
+| 011 | Нет проверки пустого экспорта | index.html | 🟡 | UX | ✅ ИСПРАВЛЕНО |
+| 012 | Нет валидации CSV импорта | index.html | 🟡 | Validation | ✅ ИСПРАВЛЕНО |
 
 ---
 
@@ -601,3 +601,36 @@ function validateEmployeeRow(row) {
 - Файл: `dashboard/index.html:1114-1131`
 - Изменение: Функции `getToken()` и `setToken()` с try-catch
 - Результат: localStorage недоступна — не падает, fallback работает
+
+### 2026-04-22 — Исправлены все средние приоритеты (BUG-007 до BUG-012)
+
+✅ **BUG-007 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html:1090-1112`
+- Изменение: Добавлены try-catch, timeout 10 сек, проверка res.ok в supabaseFetch()
+- Результат: Сетевые ошибки ловятся, логируются, не крашат интерфейс
+
+✅ **BUG-008 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html:saveReviewEdit()`
+- Изменение: Добавлена валидация hours (NaN, отрицательные, > 24) и status
+- Результат: Невалидные данные не отправляются на сервер
+
+✅ **BUG-009 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html` (везде)
+- Результат: Верифицировано что все пользовательские данные экранируются через escHtml()
+- XSS уязвимость исключена
+
+✅ **BUG-010 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html:addEmployee()`
+- Изменение: Добавлен try-catch вокруг uploadRefPhoto(), проверка на null
+- Результат: Ошибки при загрузке фото обрабатываются корректно
+
+✅ **BUG-011 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html:downloadExcel() и printTimesheet()`
+- Результат: Верифицировано что оба метода уже проверяют на пустые данные
+- Показывают информативный alert при пустом экспорте
+
+✅ **BUG-012 (СРЕДНИЙ):**
+- Файл: `dashboard/index.html:parseAndPreview()`
+- Изменение: Создана validateEmployeeRow() с полной валидацией всех полей
+- Добавлена проверка дубликатов по имени (case-insensitive)
+- Результат: CSV импорт полностью валидируется перед вставкой в BD
