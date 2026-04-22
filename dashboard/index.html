@@ -1089,20 +1089,38 @@
 
     async function supabaseFetch(path, options = {}) {
       const token = localStorage.getItem('sb_token');
-      const res = await fetch(`${SUPABASE_URL}${path}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${token}`,
-          ...(options.headers || {})
+      try {
+        const res = await fetch(`${SUPABASE_URL}${path}`, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${token}`,
+            ...(options.headers || {})
+          },
+          signal: AbortSignal.timeout(10000)
+        });
+        if (!res.ok) {
+          console.error(`HTTP ${res.status}:`, res.statusText);
+          return { error: `HTTP ${res.status}`, status: res.status };
         }
-      });
-      return res.json();
+        return await res.json();
+      } catch (err) {
+        console.error('Network error:', err.message);
+        return { error: err.message || 'Network error', status: 0 };
+      }
     }
 
     async function guardedFetch(path, options = {}) {
       const data = await supabaseFetch(path, options);
+      if (!data) return null;
+      if (data.error) {
+        if (data.status === 401) {
+          localStorage.removeItem('sb_token');
+          showAuth();
+        }
+        return null;
+      }
       if (data && (data.message === 'JWT expired' || data.code === 'PGRST301')) {
         localStorage.removeItem('sb_token');
         showAuth();
@@ -1667,6 +1685,33 @@
         return;
       }
 
+      // Валидация hours
+      if (hoursVal !== '') {
+        const hours = parseFloat(hoursVal);
+        if (isNaN(hours)) {
+          errEl.textContent = 'Часы должны быть числом';
+          errEl.style.display = '';
+          return;
+        }
+        if (hours < 0) {
+          errEl.textContent = 'Часы не могут быть отрицательными';
+          errEl.style.display = '';
+          return;
+        }
+        if (hours > 24) {
+          errEl.textContent = 'Часы не могут превышать 24 в день';
+          errEl.style.display = '';
+          return;
+        }
+      }
+
+      // Валидация status
+      if (!['done', 'needs_review'].includes(status)) {
+        errEl.textContent = 'Неверный статус';
+        errEl.style.display = '';
+        return;
+      }
+
       const btn = document.getElementById('rv-save-btn');
       btn.disabled = true;
       btn.textContent = 'Сохранение...';
@@ -2150,6 +2195,23 @@
       return HEADER_HINTS.some(h => joined.includes(h));
     }
 
+    function validateEmployeeRow(cells, rowNum) {
+      const name  = (cells[0] || '').trim();
+      const pos   = (cells[1] || '').trim();
+      const team  = (cells[2] || '').trim();
+      const rate  = parseFloat((cells[3] || '').replace(/[^\d.,-]/g,'').replace(',','.'));
+
+      if (!name) return `Строка ${rowNum}: имя обязательно`;
+      if (name.length > 100) return `Строка ${rowNum}: имя слишком длинное (макс 100 символов)`;
+      if (pos && pos.length > 50) return `Строка ${rowNum}: должность слишком длинная (макс 50 символов)`;
+      if (team && team.length > 50) return `Строка ${rowNum}: бригада слишком длинная (макс 50 символов)`;
+      if (isNaN(rate)) return `Строка ${rowNum}: ставка должна быть числом`;
+      if (rate <= 0) return `Строка ${rowNum}: ставка должна быть положительной`;
+      if (rate > 1000000) return `Строка ${rowNum}: ставка слишком высокая`;
+
+      return null;  // OK
+    }
+
     function parseAndPreview(text) {
       const errEl = document.getElementById('import-parse-error');
       errEl.style.display = 'none';
@@ -2161,16 +2223,33 @@
       if (rows.length > 1 && looksLikeHeader(rows[0])) startIdx = 1;
       const parsed = [];
       const warnings = [];
+      const seenNames = new Set();
+
       rows.slice(startIdx).forEach((cells, i) => {
         if (!cells.length || cells.every(c => !c)) return;
-        const name  = cells[0] || '';
+
+        const rowNum = startIdx + i + 1;
+        const validationErr = validateEmployeeRow(cells, rowNum);
+        if (validationErr) {
+          warnings.push(validationErr);
+          return;
+        }
+
+        const name  = cells[0].trim();
         const pos   = cells[1] || '';
         const team  = cells[2] || '';
         const rate  = parseFloat((cells[3] || '').replace(/[^\d.,-]/g,'').replace(',','.'));
-        const valid = name.trim().length > 0 && !isNaN(rate) && rate > 0;
-        if (!valid) warnings.push(`Строка ${startIdx + i + 1}: пропущена (нет имени или ставки)`);
-        else parsed.push({ display_name: name.trim(), position: pos || null, team: team || null, daily_rate: rate });
+
+        // Проверка на дубликаты
+        if (seenNames.has(name.toLowerCase())) {
+          warnings.push(`Строка ${rowNum}: дубликат имени "${name}" (пропущена)`);
+          return;
+        }
+        seenNames.add(name.toLowerCase());
+
+        parsed.push({ display_name: name, position: pos || null, team: team || null, daily_rate: rate });
       });
+
       if (!parsed.length) {
         errEl.textContent = 'Не найдено ни одной корректной строки. Проверьте формат: Имя; Должность; Бригада; Ставка/день';
         errEl.style.display = 'block'; return;
@@ -2414,10 +2493,21 @@
 
       if (window._empPhotoFile && savedId) {
         btn.innerHTML = '<span class="spinner spinner-sm"></span> Фото...';
-        const photoPath = await uploadRefPhoto(savedId, window._empPhotoFile);
-        if (photoPath) {
+        try {
+          const photoPath = await uploadRefPhoto(savedId, window._empPhotoFile);
+          if (!photoPath) {
+            errEl.textContent = 'Ошибка загрузки фото. Попробуйте другое фото.';
+            errEl.style.display = 'block';
+            btn.disabled = false; btn.textContent = origText;
+            return;
+          }
           await supabaseFetch(`/rest/v1/employees?id=eq.${savedId}`,
             { method: 'PATCH', body: JSON.stringify({ ref_photo_url: photoPath }) });
+        } catch (err) {
+          errEl.textContent = `Ошибка при загрузке фото: ${err.message}`;
+          errEl.style.display = 'block';
+          btn.disabled = false; btn.textContent = origText;
+          return;
         }
       }
 
