@@ -517,18 +517,18 @@ function validateEmployeeRow(row) {
 
 | № | Баг | Файл | Приоритет | Тип | Статус |
 |---|-----|------|-----------|-----|--------|
-| 001 | Неправильная очистка photo_url | cleanup_photos.py | 🔴 | Logic | ❌ |
-| 002 | Нет обработки исключений при загрузке фото | webhook.js | 🟠 | Error Handling | ❌ |
-| 003 | Нет валидации face embedding | process_events.py | 🟠 | Validation | ❌ |
-| 004 | Нет timeout для face recognition | process_events.py | 🟠 | Performance | ❌ |
-| 005 | Нет безопасного парсинга fraud_flags | index.html | 🟠 | Error Handling | ❌ |
-| 006 | Нет проверки localStorage | index.html | 🟠 | Robustness | ❌ |
-| 007 | Нет обработки сетевых ошибок | index.html | 🟡 | Error Handling | ❌ |
-| 008 | Нет валидации входных данных | index.html | 🟡 | Validation | ❌ |
-| 009 | Потенциальная XSS | index.html | 🟡 | Security | ❌ |
-| 010 | Нет проверки результата upload | index.html | 🟡 | Error Handling | ❌ |
-| 011 | Нет проверки пустого экспорта | index.html | 🟡 | UX | ❌ |
-| 012 | Нет валидации CSV импорта | index.html | 🟡 | Validation | ❌ |
+| 001 | Неправильная очистка photo_url | cleanup_photos.py | 🔴 | Logic | ✅ ИСПРАВЛЕНО |
+| 002 | Нет обработки исключений при загрузке фото | webhook.js | 🟠 | Error Handling | ✅ ИСПРАВЛЕНО |
+| 003 | Нет валидации face embedding | process_events.py | 🟠 | Validation | ✅ ИСПРАВЛЕНО |
+| 004 | Нет timeout для face recognition | process_events.py | 🟠 | Performance | ✅ ИСПРАВЛЕНО |
+| 005 | Нет безопасного парсинга fraud_flags | index.html | 🟠 | Error Handling | ✅ ИСПРАВЛЕНО |
+| 006 | Нет проверки localStorage | index.html | 🟠 | Robustness | ✅ ИСПРАВЛЕНО |
+| 007 | Нет обработки сетевых ошибок | index.html | 🟡 | Error Handling | ⏳ TODO |
+| 008 | Нет валидации входных данных | index.html | 🟡 | Validation | ⏳ TODO |
+| 009 | Потенциальная XSS | index.html | 🟡 | Security | ⏳ TODO |
+| 010 | Нет проверки результата upload | index.html | 🟡 | Error Handling | ⏳ TODO |
+| 011 | Нет проверки пустого экспорта | index.html | 🟡 | UX | ⏳ TODO |
+| 012 | Нет валидации CSV импорта | index.html | 🟡 | Validation | ⏳ TODO |
 
 ---
 
@@ -565,3 +565,39 @@ function validateEmployeeRow(row) {
 **Дата создания:** 2026-04-22  
 **Создано:** Audit System  
 **Версия:** 1.0
+
+---
+
+## 🔧 История исправлений
+
+### 2026-04-22 — Исправлены критические и высокие баги
+
+✅ **BUG-001 (КРИТИЧЕСКИЙ):**
+- Файл: `ai-worker/cleanup_photos.py:154`
+- Изменение: `clear_photo_urls(photo_urls)` → `clear_photo_urls(deleted_urls)`
+- Результат: Теперь обнуляются только успешно удалённые файлы
+
+✅ **BUG-002 (ВЫСОКИЙ):**
+- Файл: `bot/api/webhook.js:63`
+- Изменение: Добавлен try-catch блок при `downloadTelegramPhoto()`
+- Результат: Исключения ловятся и логируются
+
+✅ **BUG-003 (ВЫСОКИЙ):**
+- Файл: `ai-worker/process_events.py:197-199`
+- Изменение: Добавлена проверка `ref_embedding.shape != (128,)`
+- Результат: Невалидные embeddings пропускаются безопасно
+
+✅ **BUG-004 (ВЫСОКИЙ):**
+- Файл: `ai-worker/process_events.py`
+- Изменение: Добавлен `@with_timeout(30)` декоратор для `compute_face_encoding()`
+- Результат: Face recognition имеет таймаут 30 сек, защита от зависания
+
+✅ **BUG-005 (ВЫСОКИЙ):**
+- Файл: `dashboard/index.html`
+- Изменение: Создана функция `parseFraudFlags()`, заменены все парсинги
+- Результат: Безопасный парсинг JSON, нет молчаливых ошибок
+
+✅ **BUG-006 (ВЫСОКИЙ):**
+- Файл: `dashboard/index.html:1114-1131`
+- Изменение: Функции `getToken()` и `setToken()` с try-catch
+- Результат: localStorage недоступна — не падает, fallback работает
