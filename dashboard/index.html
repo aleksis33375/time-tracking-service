@@ -301,6 +301,40 @@
     .ts-arrow { display: inline-block; font-size: 10px; margin-right: 5px; transition: transform .15s; width: 10px; }
     .ts-arrow.collapsed { transform: rotate(-90deg); }
 
+    /* ─── Print styles ──────────────────────────────────────────────────── */
+    #ts-print-header { display: none; margin-bottom: 14px; }
+    #ts-print-header h2 { font-size: 16pt; font-weight: 700; margin-bottom: 3px; }
+    #ts-print-header p  { font-size: 9pt; color: #666; }
+
+    @media print {
+      @page { size: A3 landscape; margin: 12mm 10mm; }
+
+      /* Скрываем всё лишнее */
+      .navbar, .mobile-nav, #ts-photo-tooltip,
+      #ts-search, #ts-toggle-all-btn, #ts-excel-btn, #ts-pdf-btn,
+      #ts-nav-prev, #ts-nav-next, .ts-pt-btn, #ts-custom-wrap,
+      #ts-loading, #ts-empty, .modal-backdrop { display: none !important; }
+
+      /* Показываем только Табель */
+      .page { display: none !important; padding: 0; max-width: 100%; }
+      #page-timesheet { display: block !important; padding: 0; }
+      #ts-print-header { display: block !important; }
+
+      /* Убираем overflow чтобы таблица не обрезалась */
+      .ts-wrap { overflow: visible !important; }
+      .card { box-shadow: none !important; border: none !important; }
+
+      /* Sticky-колонки не работают в print — сбрасываем */
+      .ts-col-name, .ts-col-role { position: static !important; }
+
+      /* Шрифт и разрывы */
+      .ts-table { font-size: 8pt; }
+      thead { display: table-header-group; }
+      tbody tr { page-break-inside: avoid; }
+      .ts-divider { page-break-after: always; break-after: page; }
+      .ts-subtotal { page-break-inside: avoid; break-inside: avoid; }
+    }
+
     /* ─── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 768px) {
       .navbar-nav { display: none; }
@@ -309,6 +343,35 @@
       .cards-grid { grid-template-columns: 1fr 1fr; }
       .form-row { grid-template-columns: 1fr; }
       .btn-logout span { display: none; }
+    }
+
+    /* ─── Mobile timesheet ───────────────────────────────────────────────── */
+    .ts-mob-only { display: none; }
+
+    @media (max-width: 640px) {
+      /* Скрываем лишние колонки — оставляем ФИО, дни, итого, сумму */
+      .ts-mob-hide { display: none !important; }
+      .ts-mob-only { display: inline !important; }
+
+      /* Уже, чтобы больше дней влезло */
+      .ts-col-name { min-width: 100px !important; max-width: 100px !important; }
+      .ts-col-role { position: static !important; }
+
+      /* Компактнее ячейки дней */
+      .ts-day  { min-width: 32px !important; width: 32px !important; }
+      .ts-col-total, .ts-col-sum { min-width: 52px !important; }
+      .ts-table { font-size: 11px !important; }
+
+      /* Строка с кнопками управления — поиск на всю ширину */
+      #ts-search { width: 100% !important; }
+
+      /* Кнопки периода чуть компактнее */
+      .ts-pt-btn  { padding: 5px 8px !important; font-size: 12px !important; }
+      #ts-nav-label { min-width: 90px !important; font-size: 13px !important; }
+
+      /* Только иконка в кнопках Excel/PDF */
+      #ts-excel-btn .ts-btn-label,
+      #ts-pdf-btn   .ts-btn-label { display: none; }
     }
     @media (max-width: 480px) {
       .cards-grid { grid-template-columns: 1fr; }
@@ -422,7 +485,16 @@
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
             </svg>
-            Excel
+            <span class="ts-btn-label">Excel</span>
+          </button>
+          <button class="btn btn-outline btn-sm" id="ts-pdf-btn" onclick="printTimesheet()"
+            title="Скачать PDF / Распечатать (A3 альбомная)">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="2" y="4" width="12" height="9" rx="1"/>
+              <path d="M5 4V2h6v2M5 11h6M5 13h4"/>
+              <circle cx="11.5" cy="7.5" r=".5" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="ts-btn-label">PDF</span>
           </button>
         </div>
       </div>
@@ -444,6 +516,12 @@
           <input type="date" class="input" id="ts-to"   style="width:148px;">
           <button class="btn btn-primary btn-sm" onclick="tsApplyCustom()">Показать</button>
         </div>
+      </div>
+
+      <!-- Виден только при печати -->
+      <div id="ts-print-header">
+        <h2 id="ts-print-title">Табель</h2>
+        <p>Распечатано: <span id="ts-print-date"></span></p>
       </div>
 
       <div id="ts-loading" style="display:flex;align-items:center;justify-content:center;padding:60px;">
@@ -1632,10 +1710,10 @@
       // ── Thead ────────────────────────────────────────────────────────────
       document.getElementById('ts-thead').innerHTML = `<tr>
         <th class="ts-col-name">Сотрудник</th>
-        <th class="ts-col-role">Роль</th>
-        <th style="min-width:72px;">Ставка/д</th>
-        <th style="min-width:60px;">Ставка/ч</th>
-        <th style="min-width:52px;" title="Переход часов из прошлого периода">Перех.ч</th>
+        <th class="ts-col-role ts-mob-hide">Роль</th>
+        <th class="ts-mob-hide" style="min-width:72px;">Ставка/д</th>
+        <th class="ts-mob-hide" style="min-width:60px;">Ставка/ч</th>
+        <th class="ts-mob-hide" style="min-width:52px;" title="Переход часов из прошлого периода">Перех.ч</th>
         ${days.map((dk, i) => {
           const dayNum = parseInt(dk.slice(8));
           const sub    = multiMonth
@@ -1701,8 +1779,9 @@
           teamHours += totalHours;
           teamSum   += sum;
 
+          const _prevMon = mskOf(tsRefDate).getUTCMonth();
           const prevCell = prevHours
-            ? `<span title="Часы из ${MONTH_NAMES[tsMonth === 0 ? 11 : tsMonth - 1]}"
+            ? `<span title="Часы из ${MONTH_NAMES[_prevMon === 0 ? 11 : _prevMon - 1]}"
                 style="color:var(--accent);font-weight:600;">${prevHours.toFixed(1)}</span>`
             : `<span style="color:#D1D5DB;">0</span>`;
 
@@ -1710,10 +1789,10 @@
             <td class="ts-col-name" style="padding:8px 8px;">
               <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
             </td>
-            <td class="ts-col-role" style="color:var(--muted);padding:8px 6px;">${escHtml(emp.position || '—')}</td>
-            <td>${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
-            <td style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
-            <td>${prevCell}</td>
+            <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:8px 6px;">${escHtml(emp.position || '—')}</td>
+            <td class="ts-mob-hide">${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
+            <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
+            <td class="ts-mob-hide">${prevCell}</td>
             ${dayCells}
             <td class="ts-col-total">${totalHours ? totalHours.toFixed(1) : '—'}</td>
             <td class="ts-col-sum">${sum ? sum.toLocaleString('ru', {maximumFractionDigits:0}) : '—'}</td>
@@ -1723,10 +1802,10 @@
         // Подитог бригады (кликабельный — сворачивание)
         html += `<tr class="ts-subtotal ts-team-header" data-team-id="${tid}" onclick="tsToggleTeam(${tid})">
           <td class="ts-col-name" style="padding:8px 8px;">
-            <span class="ts-arrow" id="ts-arrow-${tid}">▼</span>${escHtml(team)}
+            <span class="ts-arrow" id="ts-arrow-${tid}">▼</span>${escHtml(team)}<span class="ts-mob-only" style="color:var(--muted);font-size:11px;margin-left:4px;">(${members.length} чел.)</span>
           </td>
-          <td class="ts-col-role">${members.length} чел.</td>
-          <td colspan="3"></td>
+          <td class="ts-col-role ts-mob-hide">${members.length} чел.</td>
+          <td class="ts-mob-hide"></td><td class="ts-mob-hide"></td><td class="ts-mob-hide"></td>
           ${days.map(() => '<td></td>').join('')}
           <td class="ts-col-total">${teamHours.toFixed(1)}</td>
           <td class="ts-col-sum">${teamSum.toLocaleString('ru', {maximumFractionDigits:0})}</td>
@@ -1863,6 +1942,29 @@
           <path d="M8 1v9M4 6l4 4 4-4M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
         </svg> Excel`;
       });
+    }
+
+    /* ─── PDF / Print ───────────────────────────────────────────────────── */
+    function printTimesheet() {
+      if (!tsLastData.days.length) {
+        alert('Нет данных для печати. Сначала откройте Табель.');
+        return;
+      }
+      const period = getPeriodInfo();
+      const label  = period?.label || '';
+
+      document.getElementById('ts-print-title').textContent = `Табель — ${label}`;
+      document.getElementById('ts-print-date').textContent  =
+        new Date().toLocaleString('ru-RU', {
+          day:'2-digit', month:'2-digit', year:'numeric',
+          hour:'2-digit', minute:'2-digit'
+        });
+
+      // Имя файла в диалоге «Сохранить PDF»
+      const prev = document.title;
+      document.title = `Табель_${label.replace(/[\/\\:*?"<>|\s]/g, '_')}`;
+      window.print();
+      document.title = prev;
     }
 
     /* ─── Init ──────────────────────────────────────────────────────────── */
