@@ -433,11 +433,14 @@
 
     <!-- Страницы -->
     <div class="page active" id="page-overview">
-      <div class="page-header">
-        <div class="page-title">Обзор</div>
-        <div class="page-sub">Сводка за сегодня</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        <div>
+          <div class="page-title">Обзор</div>
+          <div class="page-sub" id="ov-date-label">Сводка за сегодня</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadOverview()" title="Обновить">↺ Обновить</button>
       </div>
-      <div class="cards-grid">
+      <div class="cards-grid" style="margin-bottom:20px;">
         <div class="card stat-card">
           <div class="stat-label">На объекте сегодня</div>
           <div class="stat-value" id="stat-today">—</div>
@@ -451,20 +454,42 @@
         <div class="card stat-card">
           <div class="stat-label">Всего сотрудников</div>
           <div class="stat-value" id="stat-employees">—</div>
-          <div class="stat-sub">в базе</div>
+          <div class="stat-sub">активных в базе</div>
         </div>
         <div class="card stat-card">
           <div class="stat-label">Фото сегодня</div>
           <div class="stat-value" id="stat-photos">—</div>
-          <div class="stat-sub">обработано</div>
+          <div class="stat-sub">записей событий</div>
         </div>
       </div>
+
+      <!-- Таблица сводки за день -->
       <div class="card">
-        <div class="card-body">
-          <div class="empty">
-            <div class="empty-icon">📊</div>
-            Данные появятся после подключения Telegram-бота
-          </div>
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;">
+          <span style="font-weight:600;font-size:14px;">Активность сегодня</span>
+          <span id="ov-pending-badge" style="display:none;background:var(--warn-bg);color:var(--warning);font-size:12px;font-weight:600;padding:2px 10px;border-radius:12px;border:1px solid #FDE68A;"></span>
+        </div>
+        <div id="ov-loading" style="display:flex;align-items:center;justify-content:center;padding:48px;">
+          <span class="spinner spinner-md"></span>
+        </div>
+        <div id="ov-empty" style="display:none;padding:48px 20px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">📭</div>
+          <div style="color:var(--muted);font-size:14px;">Сегодня событий не зафиксировано</div>
+        </div>
+        <div id="ov-table-wrap" style="display:none;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;" id="ov-table">
+            <thead>
+              <tr style="background:#F9FAFB;border-bottom:1px solid var(--border);">
+                <th style="text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Сотрудник</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Бригада</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Приход</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Уход</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Часов</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Статус</th>
+              </tr>
+            </thead>
+            <tbody id="ov-tbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -548,16 +573,63 @@
     </div>
 
     <div class="page" id="page-attendance">
-      <div class="page-header">
-        <div class="page-title">Посещаемость</div>
-        <div class="page-sub">Отметки прихода и ухода</div>
+      <!-- Заголовок + навигация -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+          <div class="page-title">Посещаемость</div>
+          <div class="page-sub" id="att-date-label">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="attNavDay(-1)">←</button>
+          <input type="date" class="input" id="att-date-input" style="width:148px;" onchange="loadAttendance()">
+          <button class="btn btn-outline btn-sm" onclick="attNavDay(1)">→</button>
+          <button class="btn btn-outline btn-sm" onclick="attNavDay(0)" title="Сегодня">Сегодня</button>
+        </div>
       </div>
+
+      <!-- Фильтры -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <select class="input" id="att-filter-team" style="width:180px;" onchange="renderAttendance()">
+          <option value="">Все бригады</option>
+        </select>
+        <select class="input" id="att-filter-status" style="width:160px;" onchange="renderAttendance()">
+          <option value="">Все статусы</option>
+          <option value="done">Учтено</option>
+          <option value="needs_review">Требует проверки</option>
+          <option value="pending">Ожидание</option>
+        </select>
+        <select class="input" id="att-filter-type" style="width:160px;" onchange="renderAttendance()">
+          <option value="">Все типы</option>
+          <option value="start">Начало смены</option>
+          <option value="end">Конец смены</option>
+        </select>
+        <span id="att-count-label" style="align-self:center;font-size:13px;color:var(--muted);margin-left:4px;"></span>
+      </div>
+
+      <!-- Карточка с таблицей -->
       <div class="card">
-        <div class="card-body">
-          <div class="empty">
-            <div class="empty-icon">🕐</div>
-            Страница Посещаемость — в разработке
-          </div>
+        <div id="att-loading" style="display:flex;align-items:center;justify-content:center;padding:48px;">
+          <span class="spinner spinner-md"></span>
+        </div>
+        <div id="att-empty" style="display:none;padding:48px 20px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">📭</div>
+          <div style="color:var(--muted);font-size:14px;">Нет отметок за выбранный день</div>
+        </div>
+        <div id="att-table-wrap" style="display:none;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#F9FAFB;border-bottom:1px solid var(--border);">
+                <th style="text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;cursor:pointer;" onclick="attSort('time')">Время МСК <span id="att-sort-time"></span></th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;cursor:pointer;" onclick="attSort('name')">Сотрудник <span id="att-sort-name"></span></th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Бригада</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Тип</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Часов</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Статус</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Фото</th>
+              </tr>
+            </thead>
+            <tbody id="att-tbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -607,46 +679,184 @@
     </div>
 
     <div class="page" id="page-review">
-      <div class="page-header">
-        <div class="page-title">Проверка</div>
-        <div class="page-sub">Фото требующие ручной проверки</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        <div>
+          <div class="page-title">Ручная корректировка</div>
+          <div class="page-sub" id="rv-sub">Загрузка...</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadReview()">↺ Обновить</button>
       </div>
+
+      <!-- Фильтры -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <select class="input" id="rv-filter-fraud" style="width:210px;" onchange="renderReview()">
+          <option value="">Все флаги</option>
+          <option value="face_mismatch">face_mismatch</option>
+          <option value="wrong_location">wrong_location</option>
+          <option value="incomplete_day">incomplete_day</option>
+        </select>
+        <span id="rv-count-label" style="align-self:center;font-size:13px;color:var(--muted);"></span>
+      </div>
+
       <div class="card">
-        <div class="card-body">
-          <div class="empty">
-            <div class="empty-icon">✅</div>
-            Записей для проверки нет
-          </div>
+        <div id="rv-loading" style="display:flex;align-items:center;justify-content:center;padding:60px;">
+          <span class="spinner spinner-md"></span>
+        </div>
+        <div id="rv-empty" style="display:none;padding:60px 20px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">✅</div>
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Всё проверено</div>
+          <div style="color:var(--muted);font-size:13px;">Записей, требующих проверки, нет</div>
+        </div>
+        <div id="rv-table-wrap" style="display:none;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#F9FAFB;border-bottom:1px solid var(--border);">
+                <th style="text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Дата / Время МСК</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Имя на фото</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Сотрудник в базе</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Тип события</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Флаги</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Фото</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Действие</th>
+              </tr>
+            </thead>
+            <tbody id="rv-tbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
 
     <div class="page" id="page-analytics">
-      <div class="page-header">
-        <div class="page-title">Аналитика</div>
-        <div class="page-sub">Графики и статистика ФОТ</div>
+      <!-- Заголовок + навигация по месяцам -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+        <div>
+          <div class="page-title">Аналитика</div>
+          <div class="page-sub" id="an-sub">—</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-outline btn-sm" onclick="anNavMonth(-1)">←</button>
+          <span id="an-nav-label" style="font-weight:600;min-width:120px;text-align:center;font-size:14px;"></span>
+          <button class="btn btn-outline btn-sm" onclick="anNavMonth(1)">→</button>
+          <button class="btn btn-outline btn-sm" onclick="anNavMonth(0)">Сейчас</button>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-body">
-          <div class="empty">
-            <div class="empty-icon">📈</div>
-            Страница Аналитика — в разработке
+
+      <!-- Стат-карточки -->
+      <div class="cards-grid" style="margin-bottom:20px;">
+        <div class="card stat-card">
+          <div class="stat-label">ФОТ за период</div>
+          <div class="stat-value" id="an-stat-fot" style="font-size:22px;">—</div>
+          <div class="stat-sub">руб.</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Всего часов</div>
+          <div class="stat-value" id="an-stat-hours">—</div>
+          <div class="stat-sub">отработано</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Среднее в день</div>
+          <div class="stat-value" id="an-stat-avg">—</div>
+          <div class="stat-sub">человек на объекте</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Аномалий</div>
+          <div class="stat-value" style="color:var(--danger);" id="an-stat-anomaly">—</div>
+          <div class="stat-sub">needs_review за период</div>
+        </div>
+      </div>
+
+      <div id="an-loading" style="display:flex;align-items:center;justify-content:center;padding:60px;">
+        <span class="spinner spinner-md"></span>
+      </div>
+
+      <div id="an-content" style="display:none;">
+        <!-- График: часы по дням -->
+        <div class="card" style="margin-bottom:16px;">
+          <div style="padding:14px 16px 0;font-weight:600;font-size:14px;">Часы по дням</div>
+          <div style="padding:12px 16px 16px;overflow-x:auto;">
+            <svg id="an-chart-days" style="width:100%;min-width:300px;display:block;" viewBox="0 0 800 200" preserveAspectRatio="none"></svg>
+            <div id="an-chart-days-labels" style="display:flex;justify-content:space-between;padding:0 4px;font-size:10px;color:var(--muted);margin-top:2px;"></div>
+          </div>
+        </div>
+
+        <!-- График: часы и ФОТ по бригадам -->
+        <div class="card" style="margin-bottom:16px;">
+          <div style="padding:14px 16px 0;font-weight:600;font-size:14px;">По бригадам</div>
+          <div style="padding:12px 16px 16px;overflow-x:auto;">
+            <svg id="an-chart-teams" style="width:100%;min-width:300px;display:block;" viewBox="0 0 800 180" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+        </div>
+
+        <!-- Аномалии -->
+        <div class="card">
+          <div style="padding:14px 16px 0;font-weight:600;font-size:14px;">Аномалии за период</div>
+          <div id="an-anomaly-wrap" style="padding:12px 16px 16px;">
+            <div id="an-no-anomaly" style="display:none;padding:20px 0;text-align:center;color:var(--muted);font-size:13px;">✅ Аномалий нет</div>
+            <div id="an-anomaly-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;"></div>
+            <div id="an-anomaly-table-wrap" style="overflow-x:auto;"></div>
           </div>
         </div>
       </div>
     </div>
 
     <div class="page" id="page-logs">
-      <div class="page-header">
-        <div class="page-title">Логи</div>
-        <div class="page-sub">Журнал событий системы</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+        <div>
+          <div class="page-title">Логи</div>
+          <div class="page-sub" id="lg-sub">Журнал событий системы</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap;">
+            <input type="checkbox" id="lg-autorefresh" onchange="lgToggleAutoRefresh()"> Авто-обновление (30с)
+          </label>
+          <button class="btn btn-outline btn-sm" onclick="loadLogs(true)">↺ Обновить</button>
+        </div>
       </div>
+
+      <!-- Фильтры -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <select class="input" id="lg-filter-level" style="width:140px;" onchange="loadLogs(true)">
+          <option value="">Все уровни</option>
+          <option value="info">info</option>
+          <option value="warning">warning</option>
+          <option value="error">error</option>
+        </select>
+        <select class="input" id="lg-filter-source" style="width:180px;" onchange="loadLogs(true)">
+          <option value="">Все источники</option>
+          <option value="ai-worker">ai-worker</option>
+          <option value="bot">bot</option>
+          <option value="cleanup-worker">cleanup-worker</option>
+          <option value="dashboard">dashboard</option>
+        </select>
+        <input class="input" type="text" id="lg-filter-search" style="width:220px;"
+          placeholder="Поиск по сообщению..." oninput="lgDebouncedSearch()">
+        <span id="lg-count-label" style="align-self:center;font-size:13px;color:var(--muted);"></span>
+      </div>
+
       <div class="card">
-        <div class="card-body">
-          <div class="empty">
-            <div class="empty-icon">📝</div>
-            Логи пусты
-          </div>
+        <div id="lg-loading" style="display:flex;align-items:center;justify-content:center;padding:48px;">
+          <span class="spinner spinner-md"></span>
+        </div>
+        <div id="lg-empty" style="display:none;padding:48px 20px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">📝</div>
+          <div style="color:var(--muted);font-size:14px;">Записей не найдено</div>
+        </div>
+        <div id="lg-table-wrap" style="display:none;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:monospace,monospace;">
+            <thead>
+              <tr style="background:#F9FAFB;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;">
+                <th style="text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;white-space:nowrap;">Время МСК</th>
+                <th style="text-align:center;padding:8px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;white-space:nowrap;">Уровень</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;white-space:nowrap;">Источник</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Сообщение</th>
+                <th style="text-align:center;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;">Meta</th>
+              </tr>
+            </thead>
+            <tbody id="lg-tbody"></tbody>
+          </table>
+        </div>
+        <div id="lg-loadmore-wrap" style="display:none;padding:12px;text-align:center;">
+          <button class="btn btn-outline btn-sm" id="lg-loadmore-btn" onclick="loadLogsMore()">Загрузить ещё</button>
         </div>
       </div>
     </div>
@@ -657,6 +867,66 @@
     <div class="tip-header" id="ts-tip-header"></div>
     <div class="tip-img-wrap" id="ts-tip-img-wrap">
       <span class="spinner spinner-md"></span>
+    </div>
+  </div>
+
+  <!-- Модалка: ручная корректировка события -->
+  <div class="modal-backdrop" id="modal-review-edit">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <span class="modal-title">Корректировка записи</span>
+        <button class="modal-close" onclick="closeModal('modal-review-edit')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger" id="rv-edit-error" style="display:none;"></div>
+        <input type="hidden" id="rv-edit-id">
+
+        <!-- Инфо из фото (readonly) -->
+        <div style="background:#F9FAFB;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:16px;font-size:13px;">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <span><span style="color:var(--muted);">Время:</span> <strong id="rv-edit-time">—</strong></span>
+            <span><span style="color:var(--muted);">Имя на фото:</span> <strong id="rv-edit-name-photo">—</strong></span>
+            <span><span style="color:var(--muted);">Тип (raw):</span> <strong id="rv-edit-type-raw">—</strong></span>
+          </div>
+          <div style="margin-top:6px;"><span style="color:var(--muted);">Флаги:</span> <strong id="rv-edit-flags" style="color:var(--danger);"></strong></div>
+        </div>
+
+        <!-- Редактируемые поля -->
+        <div class="form-group">
+          <label class="form-label">Сотрудник <span style="color:var(--danger)">*</span></label>
+          <select class="input" id="rv-edit-employee">
+            <option value="">— выбрать —</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Тип события</label>
+            <select class="input" id="rv-edit-event-type">
+              <option value="start">Начало смены</option>
+              <option value="end">Конец смены</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Часов</label>
+            <input class="input" type="number" id="rv-edit-hours" placeholder="Напр. 9.5" min="0" max="24" step="0.5">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Статус после сохранения</label>
+          <select class="input" id="rv-edit-status">
+            <option value="done">✓ Учтено (done)</option>
+            <option value="needs_review">⚠ Оставить на проверке (needs_review)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <button class="btn btn-sm" style="color:var(--danger);background:var(--danger-bg);border:1px solid #FECACA;"
+          onclick="deleteReviewEvent()" id="rv-delete-btn">Удалить запись</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="closeModal('modal-review-edit')">Отмена</button>
+          <button class="btn btn-primary" id="rv-save-btn" onclick="saveReviewEdit()">Сохранить</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -902,8 +1172,13 @@
       document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
       if (btn) btn.classList.add('active');
-      if (page === 'employees') loadEmployees();
-      if (page === 'timesheet') loadTimesheet();
+      if (page === 'employees')  loadEmployees();
+      if (page === 'timesheet')  loadTimesheet();
+      if (page === 'attendance') { attInitDate(); loadAttendance(); }
+      if (page === 'review')     loadReview();
+      if (page === 'analytics')  loadAnalytics();
+      if (page === 'logs')       loadLogs(true);
+      if (page !== 'logs')       { clearInterval(lgRefreshTimer); if (document.getElementById('lg-autorefresh')) document.getElementById('lg-autorefresh').checked = false; }
     }
 
     function toggleMenu() {
@@ -920,19 +1195,886 @@
 
     /* ─── Overview data ─────────────────────────────────────────────────── */
     async function loadOverview() {
-      const today = new Date().toISOString().slice(0, 10);
+      // Московская дата
+      const mskNow   = new Date(Date.now() + 3 * 3600000);
+      const todayMsk = mskNow.toISOString().slice(0, 10);
+      const todayStartUTC = new Date(todayMsk + 'T00:00:00+03:00').toISOString();
+      const todayEndUTC   = new Date(todayMsk + 'T23:59:59+03:00').toISOString();
 
-      const [employees, todayEvents, reviewEvents] = await Promise.all([
-        guardedFetch('/rest/v1/employees?select=id&deleted_at=is.null'),
-        guardedFetch(`/rest/v1/events?select=id&photo_timestamp=gte.${today}T00:00:00&status=eq.done`),
-        guardedFetch('/rest/v1/events?select=id&status=eq.needs_review')
+      const [dd, mm, yyyy] = [
+        String(mskNow.getUTCDate()).padStart(2, '0'),
+        String(mskNow.getUTCMonth() + 1).padStart(2, '0'),
+        mskNow.getUTCFullYear(),
+      ];
+      document.getElementById('ov-date-label').textContent = `Сводка за ${dd}.${mm}.${yyyy}`;
+
+      // Показываем спиннер
+      document.getElementById('ov-loading').style.display    = '';
+      document.getElementById('ov-empty').style.display      = 'none';
+      document.getElementById('ov-table-wrap').style.display = 'none';
+
+      const [employees, todayEvents, reviewAll] = await Promise.all([
+        guardedFetch('/rest/v1/employees?select=id,display_name,team,position&deleted_at=is.null&order=display_name.asc'),
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status,fraud_flags&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
+        guardedFetch('/rest/v1/events?select=id&status=eq.needs_review'),
       ]);
 
-      const unique = new Set((todayEvents || []).map(e => e.employee_id));
-      document.getElementById('stat-today').textContent     = unique.size || 0;
-      document.getElementById('stat-employees').textContent = (employees || []).length;
-      document.getElementById('stat-review').textContent    = (reviewEvents || []).length;
-      document.getElementById('stat-photos').textContent    = (todayEvents || []).length;
+      const empArr     = employees  || [];
+      const eventsArr  = todayEvents || [];
+      const reviewArr  = reviewAll  || [];
+
+      // Стат-карточки
+      const uniqueToday = new Set(eventsArr.filter(e => e.employee_id).map(e => e.employee_id));
+      document.getElementById('stat-today').textContent     = uniqueToday.size;
+      document.getElementById('stat-employees').textContent = empArr.length;
+      document.getElementById('stat-review').textContent    = reviewArr.length;
+      document.getElementById('stat-photos').textContent    = eventsArr.length;
+
+      // Бейдж «ожидают проверки»
+      const todayReview = eventsArr.filter(e => e.status === 'needs_review').length;
+      const badge = document.getElementById('ov-pending-badge');
+      if (todayReview > 0) {
+        badge.textContent    = `⚠️ ${todayReview} требует проверки`;
+        badge.style.display  = '';
+      } else {
+        badge.style.display  = 'none';
+      }
+
+      // Скрываем спиннер
+      document.getElementById('ov-loading').style.display = 'none';
+
+      if (!eventsArr.length) {
+        document.getElementById('ov-empty').style.display = '';
+        return;
+      }
+
+      // Строим карту empId → employee
+      const empMap = {};
+      for (const e of empArr) empMap[e.id] = e;
+
+      // Группируем события по сотруднику
+      const byEmp = {};
+      for (const ev of eventsArr) {
+        const eid = ev.employee_id || '_unknown';
+        if (!byEmp[eid]) byEmp[eid] = { arrive: null, depart: null, hours: null, statuses: [], frauds: [] };
+        const slot = byEmp[eid];
+        if (ev.event_type === 'start') {
+          if (!slot.arrive || ev.photo_timestamp < slot.arrive) slot.arrive = ev.photo_timestamp;
+        } else if (ev.event_type === 'end') {
+          if (!slot.depart || ev.photo_timestamp > slot.depart) slot.depart = ev.photo_timestamp;
+        }
+        if (ev.hours != null) slot.hours = ev.hours;
+        slot.statuses.push(ev.status);
+        if (ev.fraud_flags) {
+          try { const f = JSON.parse(ev.fraud_flags); if (Array.isArray(f)) slot.frauds.push(...f); } catch {}
+        }
+      }
+
+      const fmtTime = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+      };
+
+      const STATUS_LABEL = {
+        done:         ['<span style="color:var(--success);font-weight:600;">✓ Учтено</span>', ''],
+        needs_review: ['<span style="color:var(--danger);font-weight:600;">⚠ Проверить</span>', 'background:var(--danger-bg);'],
+        pending:      ['<span style="color:var(--warning);font-weight:600;">⏳ Обработка</span>', 'background:var(--warn-bg);'],
+        processing:   ['<span style="color:var(--warning);font-weight:600;">⏳ Обработка</span>', 'background:var(--warn-bg);'],
+      };
+
+      // Сортируем по бригаде → имени
+      const eids = Object.keys(byEmp).sort((a, b) => {
+        const ea = empMap[a], eb = empMap[b];
+        const ta = ea ? (ea.team || '') : 'Я';
+        const tb = eb ? (eb.team || '') : 'Я';
+        if (ta !== tb) return ta.localeCompare(tb, 'ru');
+        const na = ea ? ea.display_name : '?';
+        const nb = eb ? eb.display_name : '?';
+        return na.localeCompare(nb, 'ru');
+      });
+
+      let rows = '';
+      let lastTeam = null;
+      for (const eid of eids) {
+        const slot = byEmp[eid];
+        const emp  = empMap[eid];
+        const team = emp ? (emp.team || '—') : '—';
+        const name = emp ? emp.display_name : `Неизвестный (${eid.slice(0,8)})`;
+
+        // Разделитель бригады
+        if (team !== lastTeam) {
+          rows += `<tr><td colspan="6" style="padding:6px 12px 2px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:#F9FAFB;border-top:1px solid var(--border);">${escHtml(team)}</td></tr>`;
+          lastTeam = team;
+        }
+
+        const worstStatus = slot.statuses.includes('needs_review') ? 'needs_review'
+          : slot.statuses.includes('pending') ? 'pending'
+          : slot.statuses.includes('processing') ? 'processing'
+          : 'done';
+        const [statusHtml, rowBg] = STATUS_LABEL[worstStatus] || ['—', ''];
+        const hoursHtml = slot.hours != null ? `<strong>${slot.hours.toFixed(1)}</strong>` : '—';
+        const fraudHtml = slot.frauds.length ? ` <span title="${slot.frauds.join(', ')}" style="cursor:default;">⚠️</span>` : '';
+
+        rows += `<tr style="${rowBg}border-bottom:1px solid var(--border);">
+          <td style="padding:9px 12px;font-weight:500;">${escHtml(name)}${fraudHtml}</td>
+          <td style="padding:9px 10px;color:var(--muted);">${escHtml(team)}</td>
+          <td style="padding:9px 10px;text-align:center;">${fmtTime(slot.arrive)}</td>
+          <td style="padding:9px 10px;text-align:center;">${fmtTime(slot.depart)}</td>
+          <td style="padding:9px 10px;text-align:center;">${hoursHtml}</td>
+          <td style="padding:9px 10px;text-align:center;">${statusHtml}</td>
+        </tr>`;
+      }
+
+      document.getElementById('ov-tbody').innerHTML = rows;
+      document.getElementById('ov-table-wrap').style.display = '';
+    }
+
+    /* ─── Attendance ────────────────────────────────────────────────────── */
+    let attRawRows  = [];   // все события за выбранный день
+    let attEmpMap   = {};   // empId → {display_name, team}
+    let attSortKey  = 'time';
+    let attSortAsc  = true;
+
+    function attMskDate() {
+      const msk = new Date(Date.now() + 3 * 3600000);
+      return msk.toISOString().slice(0, 10);
+    }
+
+    function attInitDate() {
+      const inp = document.getElementById('att-date-input');
+      if (!inp.value) inp.value = attMskDate();
+    }
+
+    function attNavDay(delta) {
+      const inp = document.getElementById('att-date-input');
+      if (delta === 0) {
+        inp.value = attMskDate();
+      } else {
+        const d = new Date(inp.value + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() + delta);
+        inp.value = d.toISOString().slice(0, 10);
+      }
+      loadAttendance();
+    }
+
+    async function loadAttendance() {
+      attInitDate();
+      const dateVal = document.getElementById('att-date-input').value;
+      const [yy, mo, dd] = dateVal.split('-');
+      document.getElementById('att-date-label').textContent = `${dd}.${mo}.${yy}`;
+
+      document.getElementById('att-loading').style.display    = '';
+      document.getElementById('att-empty').style.display      = 'none';
+      document.getElementById('att-table-wrap').style.display = 'none';
+      document.getElementById('att-count-label').textContent  = '';
+
+      const startUTC = new Date(dateVal + 'T00:00:00+03:00').toISOString();
+      const endUTC   = new Date(dateVal + 'T23:59:59+03:00').toISOString();
+
+      const [events, emps] = await Promise.all([
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&order=photo_timestamp.asc&limit=1000`),
+        guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null'),
+      ]);
+
+      attRawRows = events || [];
+      attEmpMap  = {};
+      for (const e of (emps || [])) attEmpMap[e.id] = e;
+
+      // Заполнить фильтр бригад
+      const teams = [...new Set((emps || []).map(e => e.team).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+      const teamSel = document.getElementById('att-filter-team');
+      const curTeam = teamSel.value;
+      teamSel.innerHTML = '<option value="">Все бригады</option>' +
+        teams.map(t => `<option value="${escHtml(t)}"${t === curTeam ? ' selected' : ''}>${escHtml(t)}</option>`).join('');
+
+      document.getElementById('att-loading').style.display = 'none';
+      renderAttendance();
+    }
+
+    function attSort(key) {
+      if (attSortKey === key) { attSortAsc = !attSortAsc; }
+      else { attSortKey = key; attSortAsc = true; }
+      renderAttendance();
+    }
+
+    function renderAttendance() {
+      const filterTeam   = document.getElementById('att-filter-team').value;
+      const filterStatus = document.getElementById('att-filter-status').value;
+      const filterType   = document.getElementById('att-filter-type').value;
+
+      let rows = attRawRows.filter(ev => {
+        const emp = ev.employee_id ? attEmpMap[ev.employee_id] : null;
+        if (filterTeam   && (!emp || emp.team !== filterTeam))    return false;
+        if (filterStatus && ev.status !== filterStatus)           return false;
+        if (filterType   && ev.event_type !== filterType)         return false;
+        return true;
+      });
+
+      // Сортировка
+      const dir = attSortAsc ? 1 : -1;
+      rows.sort((a, b) => {
+        if (attSortKey === 'name') {
+          const na = (attEmpMap[a.employee_id]?.display_name || a.name_from_photo || '').toLowerCase();
+          const nb = (attEmpMap[b.employee_id]?.display_name || b.name_from_photo || '').toLowerCase();
+          return na.localeCompare(nb, 'ru') * dir;
+        }
+        // default: time
+        return (a.photo_timestamp || '').localeCompare(b.photo_timestamp || '') * dir;
+      });
+
+      // Обновить иконку сортировки
+      document.getElementById('att-sort-time').textContent = attSortKey === 'time' ? (attSortAsc ? ' ↑' : ' ↓') : '';
+      document.getElementById('att-sort-name').textContent = attSortKey === 'name' ? (attSortAsc ? ' ↑' : ' ↓') : '';
+
+      document.getElementById('att-count-label').textContent = `${rows.length} записей`;
+
+      if (!rows.length) {
+        document.getElementById('att-empty').style.display      = '';
+        document.getElementById('att-table-wrap').style.display = 'none';
+        return;
+      }
+      document.getElementById('att-empty').style.display      = 'none';
+      document.getElementById('att-table-wrap').style.display = '';
+
+      const fmtTime = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+      };
+
+      const TYPE_LABEL = { start: '<span style="color:var(--success);font-weight:600;">▶ Приход</span>', end: '<span style="color:var(--accent);font-weight:600;">■ Уход</span>' };
+      const STATUS_STYLE = { done: '', needs_review: 'background:var(--danger-bg);', pending: 'background:var(--warn-bg);', processing: 'background:var(--warn-bg);' };
+      const STATUS_LABEL = {
+        done:         '<span style="color:var(--success);font-weight:600;">✓ Учтено</span>',
+        needs_review: '<span style="color:var(--danger);font-weight:600;">⚠ Проверить</span>',
+        pending:      '<span style="color:var(--warning);font-weight:600;">⏳ Ожидание</span>',
+        processing:   '<span style="color:var(--warning);font-weight:600;">⏳ Обработка</span>',
+      };
+
+      let html = '';
+      for (const ev of rows) {
+        const emp  = ev.employee_id ? attEmpMap[ev.employee_id] : null;
+        const name = emp ? emp.display_name : (ev.name_from_photo || `ID: ${(ev.employee_id || '?').slice(0,8)}`);
+        const team = emp ? (emp.team || '—') : '—';
+        const rowBg = STATUS_STYLE[ev.status] || '';
+
+        let fraudTip = '';
+        if (ev.fraud_flags) {
+          try {
+            const f = JSON.parse(ev.fraud_flags);
+            if (Array.isArray(f) && f.length) fraudTip = ` <span title="${f.join(', ')}" style="cursor:default;">⚠️</span>`;
+          } catch {}
+        }
+
+        const photoCell = ev.photo_url
+          ? `<a href="#" onclick="attShowPhoto('${escHtml(ev.photo_url)}');return false;" style="color:var(--accent);text-decoration:none;font-size:18px;" title="Показать фото">🖼</a>`
+          : '<span style="color:#D1D5DB;">—</span>';
+
+        html += `<tr style="${rowBg}border-bottom:1px solid var(--border);">
+          <td style="padding:9px 12px;font-variant-numeric:tabular-nums;">${fmtTime(ev.photo_timestamp)}</td>
+          <td style="padding:9px 10px;font-weight:500;">${escHtml(name)}${fraudTip}</td>
+          <td style="padding:9px 10px;color:var(--muted);">${escHtml(team)}</td>
+          <td style="padding:9px 10px;text-align:center;">${TYPE_LABEL[ev.event_type] || `<span style="color:var(--muted);">${escHtml(ev.event_type_raw || '?')}</span>`}</td>
+          <td style="padding:9px 10px;text-align:center;">${ev.hours != null ? `<strong>${parseFloat(ev.hours).toFixed(1)}</strong>` : '—'}</td>
+          <td style="padding:9px 10px;text-align:center;">${STATUS_LABEL[ev.status] || escHtml(ev.status)}</td>
+          <td style="padding:9px 10px;text-align:center;">${photoCell}</td>
+        </tr>`;
+      }
+      document.getElementById('att-tbody').innerHTML = html;
+    }
+
+    // Показ фото из Supabase Storage по клику
+    async function attShowPhoto(photoUrl) {
+      if (!photoUrl) return;
+      let url = photoUrl;
+      // Если относительный путь — получить signed URL
+      if (!photoUrl.startsWith('http')) {
+        const bucket = photoUrl.split('/')[0];
+        const path   = photoUrl.slice(bucket.length + 1);
+        const res = await guardedFetch(`/storage/v1/object/sign/${bucket}/${path}`, {
+          method: 'POST', body: JSON.stringify({ expiresIn: 300 })
+        });
+        if (res && res.signedURL) url = SUPABASE_URL + res.signedURL;
+        else return;
+      }
+      window.open(url, '_blank');
+    }
+
+    /* ─── Review / Manual correction ───────────────────────────────────── */
+    let rvRawRows = [];
+    let rvEmpList = [];   // [{id, display_name, team}]
+
+    async function loadReview() {
+      document.getElementById('rv-loading').style.display    = '';
+      document.getElementById('rv-empty').style.display      = 'none';
+      document.getElementById('rv-table-wrap').style.display = 'none';
+      document.getElementById('rv-sub').textContent          = 'Загрузка...';
+
+      const [events, emps] = await Promise.all([
+        guardedFetch('/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review&order=photo_timestamp.desc&limit=500'),
+        guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null&order=team.asc,display_name.asc'),
+      ]);
+
+      rvRawRows = events || [];
+      rvEmpList = emps   || [];
+
+      const total = rvRawRows.length;
+      document.getElementById('rv-sub').textContent = total
+        ? `${total} ${total === 1 ? 'запись требует' : total < 5 ? 'записи требуют' : 'записей требуют'} проверки`
+        : 'Все записи проверены';
+
+      document.getElementById('rv-loading').style.display = 'none';
+      renderReview();
+    }
+
+    function renderReview() {
+      const filterFraud = document.getElementById('rv-filter-fraud').value;
+
+      let rows = rvRawRows.filter(ev => {
+        if (!filterFraud) return true;
+        if (!ev.fraud_flags) return false;
+        try {
+          const f = JSON.parse(ev.fraud_flags);
+          return Array.isArray(f) && f.includes(filterFraud);
+        } catch { return false; }
+      });
+
+      document.getElementById('rv-count-label').textContent = `${rows.length} записей`;
+
+      if (!rows.length) {
+        document.getElementById('rv-empty').style.display      = '';
+        document.getElementById('rv-table-wrap').style.display = 'none';
+        return;
+      }
+      document.getElementById('rv-empty').style.display      = 'none';
+      document.getElementById('rv-table-wrap').style.display = '';
+
+      // Карта сотрудников
+      const empMap = {};
+      for (const e of rvEmpList) empMap[e.id] = e;
+
+      const fmtDT = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        const date = `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+        const time = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+        return `${date} ${time}`;
+      };
+
+      const FRAUD_COLOR = { face_mismatch: '#DC2626', wrong_location: '#D97706', incomplete_day: '#7C3AED' };
+      const TYPE_LABEL  = { start: '▶ Приход', end: '■ Уход' };
+
+      let html = '';
+      for (const ev of rows) {
+        const emp = ev.employee_id ? empMap[ev.employee_id] : null;
+        const empName = emp ? emp.display_name : '—';
+
+        let flagsHtml = '—';
+        if (ev.fraud_flags) {
+          try {
+            const flags = JSON.parse(ev.fraud_flags);
+            if (Array.isArray(flags) && flags.length) {
+              flagsHtml = flags.map(f =>
+                `<span style="display:inline-block;background:${FRAUD_COLOR[f]||'#6B7280'}22;color:${FRAUD_COLOR[f]||'#6B7280'};border:1px solid ${FRAUD_COLOR[f]||'#6B7280'}44;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:3px;">${f}</span>`
+              ).join('');
+            }
+          } catch {}
+        }
+
+        const photoCell = ev.photo_url
+          ? `<a href="#" onclick="attShowPhoto('${escHtml(ev.photo_url)}');return false;" style="color:var(--accent);font-size:18px;text-decoration:none;" title="Открыть фото">🖼</a>`
+          : '<span style="color:#D1D5DB;">—</span>';
+
+        html += `<tr style="border-bottom:1px solid var(--border);background:var(--danger-bg);">
+          <td style="padding:9px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;">${fmtDT(ev.photo_timestamp)}</td>
+          <td style="padding:9px 10px;color:var(--muted);">${escHtml(ev.name_from_photo || '—')}</td>
+          <td style="padding:9px 10px;font-weight:500;">${escHtml(empName)}</td>
+          <td style="padding:9px 10px;text-align:center;">${TYPE_LABEL[ev.event_type] || escHtml(ev.event_type_raw || '?')}</td>
+          <td style="padding:9px 10px;">${flagsHtml}</td>
+          <td style="padding:9px 10px;text-align:center;">${photoCell}</td>
+          <td style="padding:9px 10px;text-align:center;">
+            <button class="btn btn-outline btn-sm" onclick="openReviewEdit('${ev.id}')">Исправить</button>
+          </td>
+        </tr>`;
+      }
+      document.getElementById('rv-tbody').innerHTML = html;
+    }
+
+    function openReviewEdit(eventId) {
+      const ev  = rvRawRows.find(r => r.id === eventId);
+      if (!ev) return;
+
+      document.getElementById('rv-edit-id').value = eventId;
+      document.getElementById('rv-edit-error').style.display = 'none';
+
+      // Инфо из фото
+      const fmtDT = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+      };
+      document.getElementById('rv-edit-time').textContent      = fmtDT(ev.photo_timestamp);
+      document.getElementById('rv-edit-name-photo').textContent = ev.name_from_photo || '—';
+      document.getElementById('rv-edit-type-raw').textContent  = ev.event_type_raw  || '—';
+      let flagsTxt = '—';
+      try { const f = JSON.parse(ev.fraud_flags || '[]'); flagsTxt = f.join(', ') || '—'; } catch {}
+      document.getElementById('rv-edit-flags').textContent = flagsTxt;
+
+      // Dropdown сотрудников
+      const empSel = document.getElementById('rv-edit-employee');
+      empSel.innerHTML = '<option value="">— выбрать —</option>' +
+        rvEmpList.map(e =>
+          `<option value="${e.id}"${e.id === ev.employee_id ? ' selected' : ''}>${escHtml(e.display_name)}${e.team ? ` (${escHtml(e.team)})` : ''}</option>`
+        ).join('');
+
+      // Тип и часы
+      document.getElementById('rv-edit-event-type').value = ev.event_type || 'start';
+      document.getElementById('rv-edit-hours').value      = ev.hours != null ? ev.hours : '';
+      document.getElementById('rv-edit-status').value     = 'done';
+
+      // Кнопка сохранения
+      const btn = document.getElementById('rv-save-btn');
+      btn.disabled = false;
+      btn.textContent = 'Сохранить';
+
+      openModal('modal-review-edit');
+    }
+
+    async function saveReviewEdit() {
+      const id        = document.getElementById('rv-edit-id').value;
+      const empId     = document.getElementById('rv-edit-employee').value;
+      const eventType = document.getElementById('rv-edit-event-type').value;
+      const hoursVal  = document.getElementById('rv-edit-hours').value;
+      const status    = document.getElementById('rv-edit-status').value;
+      const errEl     = document.getElementById('rv-edit-error');
+      errEl.style.display = 'none';
+
+      if (!empId) {
+        errEl.textContent = 'Выберите сотрудника';
+        errEl.style.display = '';
+        return;
+      }
+
+      const btn = document.getElementById('rv-save-btn');
+      btn.disabled = true;
+      btn.textContent = 'Сохранение...';
+
+      const patch = {
+        employee_id: empId,
+        event_type:  eventType,
+        status:      status,
+        fraud_flags: '[]',
+      };
+      if (hoursVal !== '') patch.hours = parseFloat(hoursVal);
+
+      const token = localStorage.getItem('sb_token');
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${token}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(patch),
+      });
+
+      btn.disabled = false;
+      btn.textContent = 'Сохранить';
+
+      if (res.ok) {
+        closeModal('modal-review-edit');
+        loadReview();
+      } else {
+        errEl.textContent = `Ошибка сохранения: ${res.status}`;
+        errEl.style.display = '';
+      }
+    }
+
+    async function deleteReviewEvent() {
+      const id = document.getElementById('rv-edit-id').value;
+      if (!id) return;
+      if (!confirm('Удалить эту запись события? Действие необратимо.')) return;
+
+      const token = localStorage.getItem('sb_token');
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${token}`,
+          'Prefer': 'return=minimal',
+        },
+      });
+
+      if (res.ok) {
+        closeModal('modal-review-edit');
+        loadReview();
+      } else {
+        document.getElementById('rv-edit-error').textContent = `Ошибка удаления: ${res.status}`;
+        document.getElementById('rv-edit-error').style.display = '';
+      }
+    }
+
+    /* ─── Analytics ─────────────────────────────────────────────────────── */
+    let anRefDate = new Date(Date.now() + 3 * 3600000); // MSK now
+
+    const MONTH_NAMES_AN = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+    function anNavMonth(delta) {
+      if (delta === 0) {
+        anRefDate = new Date(Date.now() + 3 * 3600000);
+      } else {
+        anRefDate = new Date(anRefDate.getTime());
+        anRefDate.setUTCMonth(anRefDate.getUTCMonth() + delta);
+      }
+      loadAnalytics();
+    }
+
+    async function loadAnalytics() {
+      const y  = anRefDate.getUTCFullYear();
+      const m  = anRefDate.getUTCMonth(); // 0-based
+      const label = `${MONTH_NAMES_AN[m]} ${y}`;
+      document.getElementById('an-nav-label').textContent = label;
+      document.getElementById('an-sub').textContent       = label;
+
+      document.getElementById('an-loading').style.display  = '';
+      document.getElementById('an-content').style.display  = 'none';
+
+      // Границы месяца в UTC (с учётом UTC+3)
+      const startUTC = new Date(Date.UTC(y, m, 1) - 3 * 3600000).toISOString();
+      const endUTC   = new Date(Date.UTC(y, m + 1, 1) - 3 * 3600000 - 1).toISOString();
+
+      const [events, emps, anomalies] = await Promise.all([
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.done&order=photo_timestamp.asc&limit=5000`),
+        guardedFetch('/rest/v1/employees?select=id,display_name,team,daily_rate,hourly_rate&deleted_at=is.null'),
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,fraud_flags,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.needs_review&order=photo_timestamp.desc&limit=200`),
+      ]);
+
+      document.getElementById('an-loading').style.display = 'none';
+
+      const evArr  = events    || [];
+      const empArr = emps      || [];
+      const anArr  = anomalies || [];
+
+      // Карта сотрудников
+      const empMap = {};
+      for (const e of empArr) empMap[e.id] = e;
+
+      // Дни месяца
+      const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      const dayTotals   = {};  // 'YYYY-MM-DD' → {hours, empIds: Set}
+      const teamTotals  = {};  // team → {hours, payroll}
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        dayTotals[key] = { hours: 0, empIds: new Set() };
+      }
+
+      for (const ev of evArr) {
+        if (!ev.photo_timestamp || ev.hours == null) continue;
+        const msk = new Date(new Date(ev.photo_timestamp).getTime() + 3 * 3600000);
+        const key = `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
+        if (!dayTotals[key]) continue;
+        dayTotals[key].hours += ev.hours;
+        if (ev.employee_id) dayTotals[key].empIds.add(ev.employee_id);
+
+        if (ev.employee_id) {
+          const emp = empMap[ev.employee_id];
+          if (emp) {
+            const team = emp.team || '—';
+            if (!teamTotals[team]) teamTotals[team] = { hours: 0, payroll: 0 };
+            teamTotals[team].hours += ev.hours;
+            const rate = emp.hourly_rate
+              ? parseFloat(emp.hourly_rate)
+              : (emp.daily_rate ? parseFloat(emp.daily_rate) / 8 : 0);
+            teamTotals[team].payroll += ev.hours * rate;
+          }
+        }
+      }
+
+      // Стат-карточки
+      const totalHours   = Object.values(dayTotals).reduce((s, d) => s + d.hours, 0);
+      const totalPayroll = Object.values(teamTotals).reduce((s, t) => s + t.payroll, 0);
+      const workDays     = Object.values(dayTotals).filter(d => d.empIds.size > 0).length;
+      const avgPerDay    = workDays ? (Object.values(dayTotals).reduce((s, d) => s + d.empIds.size, 0) / workDays) : 0;
+
+      document.getElementById('an-stat-fot').textContent     = totalPayroll ? totalPayroll.toLocaleString('ru', { maximumFractionDigits: 0 }) : '0';
+      document.getElementById('an-stat-hours').textContent   = totalHours   ? totalHours.toFixed(1)  : '0';
+      document.getElementById('an-stat-avg').textContent     = avgPerDay    ? avgPerDay.toFixed(1)   : '0';
+      document.getElementById('an-stat-anomaly').textContent = anArr.length || '0';
+
+      // График: часы по дням
+      drawDaysChart(dayTotals, daysInMonth, y, m);
+
+      // График: ФОТ / часы по бригадам
+      drawTeamsChart(teamTotals);
+
+      // Аномалии
+      renderAnomalies(anArr, empMap);
+
+      document.getElementById('an-content').style.display = '';
+    }
+
+    function drawDaysChart(dayTotals, daysInMonth, y, m) {
+      const keys   = Object.keys(dayTotals).sort();
+      const values = keys.map(k => dayTotals[k].hours);
+      const maxVal = Math.max(...values, 1);
+
+      const W = 800, H = 200, padL = 32, padR = 8, padT = 10, padB = 24;
+      const chartW = W - padL - padR;
+      const chartH = H - padT - padB;
+      const barW   = Math.max(1, chartW / daysInMonth - 2);
+      const step   = chartW / daysInMonth;
+
+      let svg = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + chartH}" stroke="#E5E7EB" stroke-width="1"/>`;
+      // Горизонтальные сетки
+      for (let i = 0; i <= 4; i++) {
+        const cy = padT + chartH - (i / 4) * chartH;
+        const lv = ((i / 4) * maxVal).toFixed(0);
+        svg += `<line x1="${padL}" y1="${cy}" x2="${W - padR}" y2="${cy}" stroke="#F3F4F6" stroke-width="1"/>`;
+        svg += `<text x="${padL - 3}" y="${cy + 4}" text-anchor="end" font-size="9" fill="#9CA3AF">${lv}</text>`;
+      }
+
+      // Определяем выходные
+      const labels = [];
+      for (let i = 0; i < keys.length; i++) {
+        const dk  = keys[i];
+        const val = values[i];
+        const bx  = padL + i * step + (step - barW) / 2;
+        const bh  = val > 0 ? Math.max(2, (val / maxVal) * chartH) : 0;
+        const by  = padT + chartH - bh;
+
+        const date = new Date(dk + 'T12:00:00Z');
+        const dow  = date.getUTCDay(); // 0=Sun,6=Sat
+        const isWk = dow === 0 || dow === 6;
+        const color = isWk ? '#FED7AA' : '#93C5FD';
+        const hColor= isWk ? '#F97316' : '#2563EB';
+
+        svg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${color}" rx="2">
+          <title>${dk}: ${val.toFixed(1)} ч</title></rect>`;
+        // При наведении — другой цвет (через CSS class не работает в SVG без стилей, используем title)
+
+        const dayNum = parseInt(dk.slice(8));
+        if (dayNum === 1 || dayNum % 5 === 0 || i === keys.length - 1) {
+          labels.push(`<text x="${(bx + barW / 2).toFixed(1)}" y="${padT + chartH + 14}" text-anchor="middle" font-size="9" fill="${isWk ? '#F97316' : '#6B7280'}">${dayNum}</text>`);
+        }
+      }
+      svg += labels.join('');
+
+      document.getElementById('an-chart-days').innerHTML = svg;
+      document.getElementById('an-chart-days-labels').innerHTML = '';
+    }
+
+    function drawTeamsChart(teamTotals) {
+      const teams   = Object.keys(teamTotals).sort((a, b) => teamTotals[b].payroll - teamTotals[a].payroll);
+      if (!teams.length) {
+        document.getElementById('an-chart-teams').innerHTML = '<text x="400" y="90" text-anchor="middle" font-size="13" fill="#9CA3AF">Нет данных</text>';
+        return;
+      }
+
+      const W = 800, H = Math.max(120, teams.length * 44 + 30);
+      document.getElementById('an-chart-teams').setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+      const maxPay  = Math.max(...teams.map(t => teamTotals[t].payroll), 1);
+      const padL    = 130, padR = 80, padT = 14, rowH = 44;
+      const barArea = W - padL - padR;
+
+      let svg = '';
+      teams.forEach((team, i) => {
+        const { hours, payroll } = teamTotals[team];
+        const barW = Math.max(2, (payroll / maxPay) * barArea);
+        const cy   = padT + i * rowH;
+
+        svg += `<text x="${padL - 8}" y="${cy + 15}" text-anchor="end" font-size="11" fill="#374151" font-weight="500">${escHtml(team.slice(0, 18))}</text>`;
+        svg += `<rect x="${padL}" y="${cy}" width="${barW.toFixed(1)}" height="22" fill="#93C5FD" rx="3"><title>${team}: ${payroll.toLocaleString('ru', {maximumFractionDigits:0})} ₽ / ${hours.toFixed(1)} ч</title></rect>`;
+        svg += `<text x="${(padL + barW + 6).toFixed(1)}" y="${cy + 15}" font-size="11" fill="#2563EB" font-weight="600">${payroll.toLocaleString('ru', {maximumFractionDigits:0})} ₽</text>`;
+        svg += `<text x="${(padL + barW + 6).toFixed(1)}" y="${cy + 28}" font-size="10" fill="#6B7280">${hours.toFixed(1)} ч</text>`;
+      });
+      document.getElementById('an-chart-teams').innerHTML = svg;
+    }
+
+    function renderAnomalies(anArr, empMap) {
+      const noEl    = document.getElementById('an-no-anomaly');
+      const cardsEl = document.getElementById('an-anomaly-cards');
+      const tableEl = document.getElementById('an-anomaly-table-wrap');
+
+      if (!anArr.length) {
+        noEl.style.display    = '';
+        cardsEl.style.display = 'none';
+        tableEl.innerHTML     = '';
+        return;
+      }
+      noEl.style.display    = 'none';
+      cardsEl.style.display = '';
+
+      // Подсчёт флагов
+      const flagCount = {};
+      for (const ev of anArr) {
+        try {
+          const f = JSON.parse(ev.fraud_flags || '[]');
+          for (const flag of (Array.isArray(f) ? f : [])) {
+            flagCount[flag] = (flagCount[flag] || 0) + 1;
+          }
+        } catch {}
+      }
+      const FRAUD_COLOR = { face_mismatch: 'var(--danger)', wrong_location: 'var(--warning)', incomplete_day: '#7C3AED' };
+      cardsEl.innerHTML = Object.entries(flagCount).map(([flag, cnt]) =>
+        `<div style="background:var(--danger-bg);border:1px solid #FECACA;border-radius:var(--radius);padding:10px 16px;min-width:150px;">
+          <div style="font-size:22px;font-weight:700;color:${FRAUD_COLOR[flag]||'#374151'};">${cnt}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${flag}</div>
+        </div>`
+      ).join('');
+
+      // Таблица топ аномалий
+      const fmtDT = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+      };
+      const thStyle = 'padding:7px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;text-align:left;';
+      const tdStyle = 'padding:8px 10px;border-bottom:1px solid var(--border);font-size:13px;';
+      let rows = anArr.slice(0, 50).map(ev => {
+        const emp = ev.employee_id ? empMap[ev.employee_id] : null;
+        const name = emp ? emp.display_name : (ev.name_from_photo || '—');
+        let flags = '—';
+        try { const f = JSON.parse(ev.fraud_flags || '[]'); flags = f.join(', ') || '—'; } catch {}
+        return `<tr>
+          <td style="${tdStyle}">${fmtDT(ev.photo_timestamp)}</td>
+          <td style="${tdStyle};font-weight:500;">${escHtml(name)}</td>
+          <td style="${tdStyle}color:var(--danger);font-size:12px;">${escHtml(flags)}</td>
+        </tr>`;
+      }).join('');
+
+      tableEl.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:#F9FAFB;border-bottom:1px solid var(--border);">
+          <th style="${thStyle}">Дата / Время</th>
+          <th style="${thStyle}">Сотрудник</th>
+          <th style="${thStyle}">Флаги</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    /* ─── Logs ──────────────────────────────────────────────────────────── */
+    const LG_PAGE = 100;
+    let lgOffset       = 0;
+    let lgHasMore      = false;
+    let lgRows         = [];
+    let lgRefreshTimer = null;
+    let lgSearchTimer  = null;
+
+    const LEVEL_STYLE = {
+      info:    { bg: '#F0FDF4', color: '#16A34A', label: 'INFO'  },
+      warning: { bg: '#FFFBEB', color: '#D97706', label: 'WARN'  },
+      error:   { bg: '#FEF2F2', color: '#DC2626', label: 'ERROR' },
+    };
+
+    function lgDebouncedSearch() {
+      clearTimeout(lgSearchTimer);
+      lgSearchTimer = setTimeout(() => loadLogs(true), 400);
+    }
+
+    function lgToggleAutoRefresh() {
+      clearInterval(lgRefreshTimer);
+      if (document.getElementById('lg-autorefresh').checked) {
+        lgRefreshTimer = setInterval(() => loadLogs(true), 30000);
+      }
+    }
+
+    async function loadLogs(reset = false) {
+      if (reset) {
+        lgOffset = 0;
+        lgRows   = [];
+        document.getElementById('lg-loading').style.display    = '';
+        document.getElementById('lg-empty').style.display      = 'none';
+        document.getElementById('lg-table-wrap').style.display = 'none';
+        document.getElementById('lg-loadmore-wrap').style.display = 'none';
+      }
+
+      const level  = document.getElementById('lg-filter-level').value;
+      const source = document.getElementById('lg-filter-source').value;
+      const search = document.getElementById('lg-filter-search').value.trim();
+
+      let params = `select=id,timestamp,level,source,message,meta&order=timestamp.desc&limit=${LG_PAGE}&offset=${lgOffset}`;
+      if (level)  params += `&level=eq.${encodeURIComponent(level)}`;
+      if (source) params += `&source=eq.${encodeURIComponent(source)}`;
+      if (search) params += `&message=ilike.${encodeURIComponent('*' + search + '*')}`;
+
+      const data = await guardedFetch(`/rest/v1/logs?${params}`);
+      const rows = data || [];
+
+      lgRows   = reset ? rows : lgRows.concat(rows);
+      lgHasMore = rows.length === LG_PAGE;
+      lgOffset += rows.length;
+
+      document.getElementById('lg-loading').style.display = 'none';
+      document.getElementById('lg-sub').textContent       = `${lgRows.length}${lgHasMore ? '+' : ''} записей`;
+      document.getElementById('lg-count-label').textContent = `${lgRows.length}${lgHasMore ? '+' : ''} записей`;
+
+      if (!lgRows.length) {
+        document.getElementById('lg-empty').style.display      = '';
+        document.getElementById('lg-table-wrap').style.display = 'none';
+        document.getElementById('lg-loadmore-wrap').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('lg-empty').style.display      = 'none';
+      document.getElementById('lg-table-wrap').style.display = '';
+
+      renderLogRows();
+
+      document.getElementById('lg-loadmore-wrap').style.display = lgHasMore ? '' : 'none';
+      document.getElementById('lg-loadmore-btn').disabled = false;
+      document.getElementById('lg-loadmore-btn').textContent = 'Загрузить ещё';
+    }
+
+    async function loadLogsMore() {
+      const btn = document.getElementById('lg-loadmore-btn');
+      btn.disabled = true;
+      btn.textContent = 'Загрузка...';
+      await loadLogs(false);
+    }
+
+    function renderLogRows() {
+      const fmtDT = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return [
+          `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`,
+          `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}:${String(d.getUTCSeconds()).padStart(2,'0')}`,
+        ].join(' ');
+      };
+
+      let html = '';
+      for (const row of lgRows) {
+        const ls    = LEVEL_STYLE[row.level] || { bg: '#F9FAFB', color: '#374151', label: row.level || '?' };
+        const rowBg = row.level === 'error' ? 'background:var(--danger-bg);' : row.level === 'warning' ? 'background:var(--warn-bg);' : '';
+
+        let metaCell = '<span style="color:#D1D5DB;">—</span>';
+        if (row.meta && typeof row.meta === 'object' && Object.keys(row.meta).length) {
+          const metaId = `lg-meta-${row.id}`;
+          const preview = Object.entries(row.meta).slice(0, 2).map(([k, v]) => `${k}:${JSON.stringify(v)}`).join(' ');
+          metaCell = `<span style="color:var(--accent);cursor:pointer;font-size:11px;" onclick="lgToggleMeta('${metaId}')" title="Развернуть">{…}</span>
+            <div id="${metaId}" style="display:none;margin-top:4px;background:#F3F4F6;border-radius:4px;padding:6px 8px;font-size:11px;white-space:pre-wrap;max-width:320px;word-break:break-all;color:#374151;">${escHtml(JSON.stringify(row.meta, null, 2))}</div>`;
+        }
+
+        html += `<tr style="${rowBg}border-bottom:1px solid var(--border);">
+          <td style="padding:7px 12px;white-space:nowrap;color:var(--muted);">${fmtDT(row.timestamp)}</td>
+          <td style="padding:7px 8px;text-align:center;">
+            <span style="display:inline-block;background:${ls.bg};color:${ls.color};border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;font-family:monospace,monospace;">${ls.label}</span>
+          </td>
+          <td style="padding:7px 10px;color:var(--muted);white-space:nowrap;">${escHtml(row.source || '—')}</td>
+          <td style="padding:7px 10px;font-family:system-ui,sans-serif;font-size:13px;">${escHtml(row.message || '')}</td>
+          <td style="padding:7px 10px;text-align:center;">${metaCell}</td>
+        </tr>`;
+      }
+      document.getElementById('lg-tbody').innerHTML = html;
+    }
+
+    function lgToggleMeta(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
     }
 
     /* ─── Import ────────────────────────────────────────────────────────── */
