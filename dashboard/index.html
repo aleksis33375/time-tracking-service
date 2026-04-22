@@ -1111,7 +1111,24 @@
       return data;
     }
 
-    function getToken() { return localStorage.getItem('sb_token'); }
+    function getToken() {
+      try { return localStorage.getItem('sb_token'); }
+      catch { return null; }
+    }
+
+    function setToken(token) {
+      try { localStorage.setItem('sb_token', token); }
+      catch { console.warn('localStorage unavailable'); }
+    }
+
+    function parseFraudFlags(str) {
+      try {
+        const f = JSON.parse(str || '[]');
+        return Array.isArray(f) ? f : [];
+      } catch {
+        return [];
+      }
+    }
 
     /* ─── Auth ──────────────────────────────────────────────────────────── */
     function togglePass() {
@@ -1133,7 +1150,7 @@
       });
 
       if (data.access_token) {
-        localStorage.setItem('sb_token', data.access_token);
+        setToken(data.access_token);
         showApp();
         loadOverview();
       } else {
@@ -1266,7 +1283,8 @@
         if (ev.hours != null) slot.hours = ev.hours;
         slot.statuses.push(ev.status);
         if (ev.fraud_flags) {
-          try { const f = JSON.parse(ev.fraud_flags); if (Array.isArray(f)) slot.frauds.push(...f); } catch {}
+          const f = parseFraudFlags(ev.fraud_flags);
+          if (f.length) slot.frauds.push(...f);
         }
       }
 
@@ -1461,10 +1479,8 @@
 
         let fraudTip = '';
         if (ev.fraud_flags) {
-          try {
-            const f = JSON.parse(ev.fraud_flags);
-            if (Array.isArray(f) && f.length) fraudTip = ` <span title="${f.join(', ')}" style="cursor:default;">⚠️</span>`;
-          } catch {}
+          const f = parseFraudFlags(ev.fraud_flags);
+          if (f.length) fraudTip = ` <span title="${f.join(', ')}" style="cursor:default;">⚠️</span>`;
         }
 
         const photoCell = ev.photo_url
@@ -1534,10 +1550,8 @@
       let rows = rvRawRows.filter(ev => {
         if (!filterFraud) return true;
         if (!ev.fraud_flags) return false;
-        try {
-          const f = JSON.parse(ev.fraud_flags);
-          return Array.isArray(f) && f.includes(filterFraud);
-        } catch { return false; }
+        const f = parseFraudFlags(ev.fraud_flags);
+        return f.includes(filterFraud);
       });
 
       document.getElementById('rv-count-label').textContent = `${rows.length} записей`;
@@ -1572,14 +1586,12 @@
 
         let flagsHtml = '—';
         if (ev.fraud_flags) {
-          try {
-            const flags = JSON.parse(ev.fraud_flags);
-            if (Array.isArray(flags) && flags.length) {
-              flagsHtml = flags.map(f =>
+          const flags = parseFraudFlags(ev.fraud_flags);
+          if (flags.length) {
+            flagsHtml = flags.map(f =>
                 `<span style="display:inline-block;background:${FRAUD_COLOR[f]||'#6B7280'}22;color:${FRAUD_COLOR[f]||'#6B7280'};border:1px solid ${FRAUD_COLOR[f]||'#6B7280'}44;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:3px;">${f}</span>`
               ).join('');
-            }
-          } catch {}
+          }
         }
 
         const photoCell = ev.photo_url
@@ -1617,9 +1629,8 @@
       document.getElementById('rv-edit-time').textContent      = fmtDT(ev.photo_timestamp);
       document.getElementById('rv-edit-name-photo').textContent = ev.name_from_photo || '—';
       document.getElementById('rv-edit-type-raw').textContent  = ev.event_type_raw  || '—';
-      let flagsTxt = '—';
-      try { const f = JSON.parse(ev.fraud_flags || '[]'); flagsTxt = f.join(', ') || '—'; } catch {}
-      document.getElementById('rv-edit-flags').textContent = flagsTxt;
+      const f = parseFraudFlags(ev.fraud_flags);
+      document.getElementById('rv-edit-flags').textContent = f.join(', ') || '—';
 
       // Dropdown сотрудников
       const empSel = document.getElementById('rv-edit-employee');
@@ -1911,12 +1922,10 @@
       // Подсчёт флагов
       const flagCount = {};
       for (const ev of anArr) {
-        try {
-          const f = JSON.parse(ev.fraud_flags || '[]');
-          for (const flag of (Array.isArray(f) ? f : [])) {
-            flagCount[flag] = (flagCount[flag] || 0) + 1;
-          }
-        } catch {}
+        const f = parseFraudFlags(ev.fraud_flags);
+        for (const flag of f) {
+          flagCount[flag] = (flagCount[flag] || 0) + 1;
+        }
       }
       const FRAUD_COLOR = { face_mismatch: 'var(--danger)', wrong_location: 'var(--warning)', incomplete_day: '#7C3AED' };
       cardsEl.innerHTML = Object.entries(flagCount).map(([flag, cnt]) =>
@@ -1937,8 +1946,8 @@
       let rows = anArr.slice(0, 50).map(ev => {
         const emp = ev.employee_id ? empMap[ev.employee_id] : null;
         const name = emp ? emp.display_name : (ev.name_from_photo || '—');
-        let flags = '—';
-        try { const f = JSON.parse(ev.fraud_flags || '[]'); flags = f.join(', ') || '—'; } catch {}
+        const fList = parseFraudFlags(ev.fraud_flags);
+        const flags = fList.join(', ') || '—';
         return `<tr>
           <td style="${tdStyle}">${fmtDT(ev.photo_timestamp)}</td>
           <td style="${tdStyle};font-weight:500;">${escHtml(name)}</td>

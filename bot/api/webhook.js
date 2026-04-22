@@ -68,7 +68,13 @@ async function handlePhoto(msg) {
   const largest = msg.photo[msg.photo.length - 1];
 
   // Скачиваем оригинал с серверов Telegram
-  const originalBuffer = await downloadTelegramPhoto(largest.file_id);
+  let originalBuffer;
+  try {
+    originalBuffer = await downloadTelegramPhoto(largest.file_id);
+  } catch (err) {
+    await logToSupabase('error', 'webhook-handler', `Failed to download photo: ${err.message}`, { chatId, messageId, stack: err.stack });
+    return;
+  }
   if (!originalBuffer) {
     await logToSupabase('error', 'webhook-handler', 'Failed to download photo', { chatId, messageId });
     return;

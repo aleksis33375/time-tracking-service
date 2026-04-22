@@ -4,6 +4,7 @@ AI Worker — обработка входящих событий из Telegram.
 """
 import os
 import json
+import signal
 import tempfile
 import requests
 import difflib
@@ -24,6 +25,29 @@ HEADERS = {
 
 BATCH_SIZE   = 20   # записей за один прогон
 STUCK_AFTER  = 15   # минут до признания записи зависшей
+FACE_TIMEOUT = 30   # секунд timeout для face recognition операций
+
+
+class TimeoutError(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Face recognition operation timed out")
+
+
+def with_timeout(seconds):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)  # отключаем alarm
+            return result
+        return wrapper
+    return decorator
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -173,8 +197,9 @@ def parse_embedding(embedding_val) -> np.ndarray | None:
     return None
 
 
+@with_timeout(FACE_TIMEOUT)
 def compute_face_encoding(image_bytes: bytes) -> np.ndarray | None:
-    """Извлекает первый face encoding из изображения."""
+    """Извлекает первый face encoding из изображения (с timeout)."""
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
         tmp.write(image_bytes)
         tmp_path = tmp.name
@@ -195,11 +220,19 @@ def verify_face(photo_url: str, employee: dict) -> bool | None:
     if ref_embedding is None:
         return None   # нет эталона — пропускаем верификацию
 
+    # Проверяем валидность embedding (должен быть array формы (128,))
+    if not isinstance(ref_embedding, np.ndarray) or ref_embedding.shape != (128,):
+        return None   # невалидный embedding
+
     photo_bytes = download_storage_photo(photo_url)
     if not photo_bytes:
         return None
 
-    event_encoding = compute_face_encoding(photo_bytes)
+    try:
+        event_encoding = compute_face_encoding(photo_bytes)
+    except TimeoutError:
+        return None   # timeout при распознавании — пропускаем верификацию
+
     if event_encoding is None:
         return None   # лицо не найдено на фото события
 

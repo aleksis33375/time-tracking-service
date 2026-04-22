@@ -151,7 +151,7 @@ def main() -> None:
             url for url in photo_urls
             if storage_path_to_object(url) in set(object_paths[:deleted])
         ]
-        clear_photo_urls(photo_urls)   # обнуляем все — файлов уже нет
+        clear_photo_urls(deleted_urls)   # обнуляем ТОЛЬКО успешно удалённые
 
     log("info", "Cleanup Worker finished", {
         "retention_days": RETENTION_DAYS,
