@@ -5,6 +5,7 @@
 
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+import { waitUntil } from '@vercel/functions';
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -37,14 +38,14 @@ export default async function handler(req, res) {
   // Отвечаем 200 сразу — Telegram не будет повторять запрос
   res.status(200).json({ ok: true });
 
-  // Обрабатываем фото асинхронно после ответа
-  try {
-    const update = req.body;
-    await processUpdate(update);
-  } catch (err) {
-    console.error('Webhook error:', err);
-    await logToSupabase('error', 'webhook-handler', `Unhandled error: ${err.message}`, { stack: err.stack });
-  }
+  // waitUntil гарантирует что Vercel не заморозит функцию до завершения обработки
+  const update = req.body;
+  waitUntil(
+    processUpdate(update).catch(err => {
+      console.error('Webhook error:', err);
+      return logToSupabase('error', 'webhook-handler', `Unhandled error: ${err.message}`, { stack: err.stack });
+    })
+  );
 }
 
 // ── Update router ─────────────────────────────────────────────────────────────
