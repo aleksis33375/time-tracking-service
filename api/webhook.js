@@ -69,36 +69,41 @@ async function handlePhoto(msg) {
   // Telegram присылает несколько размеров — берём наибольший
   const largest = msg.photo[msg.photo.length - 1];
 
-  // Скачиваем оригинал с серверов Telegram
-  let originalBuffer;
-  try {
-    originalBuffer = await downloadTelegramPhoto(largest.file_id);
-  } catch (err) {
-    await logToSupabase('error', 'webhook-handler', `Failed to download photo: ${err.message}`, { chatId, messageId, stack: err.stack });
-    return;
-  }
-  if (!originalBuffer) {
-    await logToSupabase('error', 'webhook-handler', 'Failed to download photo', { chatId, messageId });
-    return;
-  }
-
-  // Сжимаем до ≤150 КБ
-  const compressedBuffer = await compressPhoto(originalBuffer);
-
-  const originalKb   = Math.round(originalBuffer.length   / 1024);
-  const compressedKb = Math.round(compressedBuffer.length / 1024);
-  console.log(`Photo: ${originalKb} KB → ${compressedKb} KB`);
-
-  // OCR верхней правой области: дата, время, город, индекс
-  const stamp = await ocrTopRight(compressedBuffer);
-  console.log('Stamp OCR:', stamp);
-
   // Подпись читаем напрямую из Telegram caption — без OCR
   const caption = parseCaptionText(msg.caption || '');
   console.log('Caption (from msg.caption):', caption);
 
-  // Резервный timestamp: если OCR штампа не прочитал дату — берём время отправки из Telegram
-  const photoTimestamp = stamp.photoTimestamp ?? new Date(msg.date * 1000).toISOString();
+  // Резервный timestamp: если фото не скачалось — берём время отправки из Telegram
+  const fallbackTimestamp = new Date(msg.date * 1000).toISOString();
+
+  // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
+  let compressedBuffer = null;
+  let photoUrl = null;
+  let stamp = {};
+
+  try {
+    const originalBuffer = await downloadTelegramPhoto(largest.file_id);
+    compressedBuffer = await compressPhoto(originalBuffer);
+    const originalKb   = Math.round(originalBuffer.length   / 1024);
+    const compressedKb = Math.round(compressedBuffer.length / 1024);
+    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB`);
+  } catch (err) {
+    await logToSupabase('warn', 'webhook-handler', `Photo download failed: ${err.message}`, { chatId, messageId });
+  }
+
+  if (compressedBuffer) {
+    // OCR верхней правой области: дата, время, город, индекс
+    stamp = await ocrTopRight(compressedBuffer);
+    console.log('Stamp OCR:', stamp);
+
+    // Сохранение сжатого фото в Supabase Storage
+    photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
+    if (!photoUrl) {
+      await logToSupabase('warn', 'webhook-handler', 'Failed to upload photo to storage', { chatId, messageId });
+    }
+  }
+
+  const photoTimestamp = stamp.photoTimestamp ?? fallbackTimestamp;
 
   // Сверка индекса с OBJECT_POSTCODE
   const fraudFlags = [];
@@ -107,14 +112,7 @@ async function handlePhoto(msg) {
     console.log(`wrong_location: got ${stamp.postcode}, expected ${OBJECT_POSTCODE}`);
   }
 
-  // Сохранение сжатого фото в Supabase Storage
-  const photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
-  if (!photoUrl) {
-    await logToSupabase('error', 'webhook-handler', 'Failed to upload photo to storage', { chatId, messageId });
-    return;
-  }
-
-  // Запись в events
+  // Запись в events — всегда, даже без фото
   await insertEvent({
     photo_url:           photoUrl,
     photo_timestamp:     photoTimestamp,
@@ -122,14 +120,15 @@ async function handlePhoto(msg) {
     name_from_photo:     caption.nameFromPhoto,
     event_type:          caption.eventType,
     event_type_raw:      caption.eventTypeRaw,
-    postcode_from_photo: stamp.postcode,
+    postcode_from_photo: stamp.postcode ?? null,
     fraud_flags:         fraudFlags,
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
     name: caption.nameFromPhoto,
     event: caption.eventTypeRaw,
-    postcode: stamp.postcode,
+    photo: photoUrl ? 'ok' : 'missing',
+    postcode: stamp.postcode ?? null,
     fraud: fraudFlags,
   });
 }
@@ -268,12 +267,16 @@ async function downloadTelegramPhoto(fileId) {
   // Шаг 1: получаем путь к файлу
   const infoRes  = await fetch(`${TG_API}/getFile?file_id=${fileId}`);
   const infoJson = await infoRes.json();
-  if (!infoJson.ok || !infoJson.result?.file_path) return null;
+  if (!infoJson.ok || !infoJson.result?.file_path) {
+    throw new Error(`getFile failed: ${JSON.stringify(infoJson)}`);
+  }
 
   // Шаг 2: скачиваем файл
   const fileUrl  = `https://api.telegram.org/file/bot${BOT_TOKEN}/${infoJson.result.file_path}`;
   const fileRes  = await fetch(fileUrl);
-  if (!fileRes.ok) return null;
+  if (!fileRes.ok) {
+    throw new Error(`File download failed: HTTP ${fileRes.status} ${fileRes.statusText}`);
+  }
 
   const arrayBuf = await fileRes.arrayBuffer();
   return Buffer.from(arrayBuf);
