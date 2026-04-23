@@ -28,7 +28,7 @@ export default async function handler(req, res) {
     return res.status(405).end();
   }
 
-  // Validate secret token (item 4)
+  // Validate secret token
   const secret = req.headers['x-telegram-bot-api-secret-token'];
   if (WEBHOOK_SECRET && secret !== WEBHOOK_SECRET) {
     return res.status(403).end();

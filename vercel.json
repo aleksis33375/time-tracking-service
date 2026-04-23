@@ -1,7 +1,4 @@
 {
-  "projectName": "ai-tabel",
-  "framework": "vanilla",
-
   "functions": {
     "api/webhook.js": {
       "maxDuration": 60,
@@ -45,7 +42,5 @@
     }
   ],
 
-  "buildCommand": "npm run build --prefix bot && echo 'Bot and Dashboard ready'",
-  "outputDirectory": ".",
-  "installCommand": "npm install --prefix bot"
+  "outputDirectory": "."
 }

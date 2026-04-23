@@ -173,7 +173,7 @@ def find_employee_by_name(name: str) -> dict | None:
 
 # ── п.6 Face recognition верификация ─────────────────────────────────────────
 
-FACE_TOLERANCE = 0.55   # чем меньше — тем строже (0.6 — стандарт, 0.55 — чуть строже)
+FACE_TOLERANCE = float(os.environ.get("FACE_TOLERANCE", "0.55"))  # чем меньше — тем строже
 
 def download_storage_photo(storage_path: str) -> bytes | None:
     """Скачивает фото из Supabase Storage по пути 'bucket/path'."""

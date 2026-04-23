@@ -1112,6 +1112,8 @@
     }
 
     async function guardedFetch(path, options = {}) {
+      // Проверяем срок токена до запроса
+      if (!checkTokenExpiry()) return null;
       const data = await supabaseFetch(path, options);
       if (!data) return null;
       if (data.error) {
@@ -1139,6 +1141,23 @@
       catch { console.warn('localStorage unavailable'); }
     }
 
+    function isTokenExpired(token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return payload.exp && payload.exp * 1000 < Date.now();
+      } catch { return false; }
+    }
+
+    function checkTokenExpiry() {
+      const token = getToken();
+      if (token && isTokenExpired(token)) {
+        localStorage.removeItem('sb_token');
+        showAuth();
+        return false;
+      }
+      return true;
+    }
+
     function parseFraudFlags(str) {
       try {
         const f = JSON.parse(str || '[]');
@@ -1154,11 +1173,23 @@
       inp.type = inp.type === 'password' ? 'text' : 'password';
     }
 
+    let _loginAttempts = 0;
+    let _loginLockedUntil = 0;
+
     async function signIn() {
       const password = document.getElementById('password').value.trim();
       if (!password) return;
       const btn = document.getElementById('login-btn');
       const err = document.getElementById('auth-error');
+
+      // Rate limiting: блокировка после 3 неудачных попыток
+      if (Date.now() < _loginLockedUntil) {
+        const secs = Math.ceil((_loginLockedUntil - Date.now()) / 1000);
+        err.textContent = `Слишком много попыток. Подождите ${secs} сек.`;
+        err.style.display = 'block';
+        return;
+      }
+
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner spinner-sm"></span> Вхожу...';
       err.style.display = 'none';
@@ -1168,10 +1199,19 @@
       });
 
       if (data.access_token) {
+        _loginAttempts = 0;
         setToken(data.access_token);
         showApp();
         loadOverview();
       } else {
+        _loginAttempts++;
+        if (_loginAttempts >= 3) {
+          _loginLockedUntil = Date.now() + 30000; // 30 сек блокировка
+          _loginAttempts = 0;
+          err.textContent = 'Слишком много попыток. Подождите 30 секунд.';
+        } else {
+          err.textContent = 'Неверный пароль. Попробуйте ещё раз.';
+        }
         err.style.display = 'block';
         btn.disabled = false;
         btn.innerHTML = 'Войти';
@@ -1724,17 +1764,26 @@
       };
       if (hoursVal !== '') patch.hours = parseFloat(hoursVal);
 
-      const token = localStorage.getItem('sb_token');
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${token}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(patch),
-      });
+      const token = getToken();
+      let res;
+      try {
+        res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${token}`,
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify(patch),
+        });
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Сохранить';
+        errEl.textContent = 'Ошибка сети. Проверьте подключение и попробуйте снова.';
+        errEl.style.display = '';
+        return;
+      }
 
       btn.disabled = false;
       btn.textContent = 'Сохранить';
@@ -1743,7 +1792,12 @@
         closeModal('modal-review-edit');
         loadReview();
       } else {
-        errEl.textContent = `Ошибка сохранения: ${res.status}`;
+        const msg = res.status === 401 || res.status === 403
+          ? 'Нет прав доступа. Перезайдите в систему.'
+          : res.status >= 500
+            ? 'Ошибка сервера. Попробуйте позже.'
+            : `Ошибка сохранения (${res.status})`;
+        errEl.textContent = msg;
         errEl.style.display = '';
       }
     }
@@ -1753,22 +1807,35 @@
       if (!id) return;
       if (!confirm('Удалить эту запись события? Действие необратимо.')) return;
 
-      const token = localStorage.getItem('sb_token');
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
-        method: 'DELETE',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${token}`,
-          'Prefer': 'return=minimal',
-        },
-      });
+      const token = getToken();
+      const errEl = document.getElementById('rv-edit-error');
+      let res;
+      try {
+        res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${token}`,
+            'Prefer': 'return=minimal',
+          },
+        });
+      } catch {
+        errEl.textContent = 'Ошибка сети. Проверьте подключение и попробуйте снова.';
+        errEl.style.display = '';
+        return;
+      }
 
       if (res.ok) {
         closeModal('modal-review-edit');
         loadReview();
       } else {
-        document.getElementById('rv-edit-error').textContent = `Ошибка удаления: ${res.status}`;
-        document.getElementById('rv-edit-error').style.display = '';
+        const msg = res.status === 401 || res.status === 403
+          ? 'Нет прав доступа. Перезайдите в систему.'
+          : res.status >= 500
+            ? 'Ошибка сервера. Попробуйте позже.'
+            : `Ошибка удаления (${res.status})`;
+        errEl.textContent = msg;
+        errEl.style.display = '';
       }
     }
 
