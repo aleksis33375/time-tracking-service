@@ -54,16 +54,17 @@
 1. Откройте https://vercel.com/new
 2. Авторизуйтесь GitHub (или создайте аккаунт)
 3. Выберите репозиторий `time-tracking-service`
-4. Project Name: `ai-tabel` (или любое другое)
+4. Project Name: `time-tracking-service`
 5. Framework: **None** (не выбирайте Next.js)
 6. Root Directory: **.** (корень репозитория)
 7. Нажмите "Deploy"
 
 Vercel автоматически:
-- Установит зависимости из `bot/package.json`
-- Соберёт webhook функцию
+- Установит зависимости из корневого `package.json` (sharp, tesseract.js для webhook)
+- Установит зависимости из `bot/package.json` для регистрации webhook'а
+- Соберёт webhook функцию `api/webhook.js`
 - Разместит Dashboard статику
-- Выдаст URL: `https://ai-tabel.vercel.app`
+- Выдаст URL: `https://time-tracking-service.vercel.app`
 
 **Вариант B: Через CLI**
 
@@ -99,18 +100,18 @@ vercel --prod
 
 ```bash
 # 1. Проверить Dashboard доступен
-curl https://ai-tabel.vercel.app/
+curl https://time-tracking-service.vercel.app/
 # Должен вернуть HTML login-страницы
 
 # 2. Проверить Bot webhook
-curl -X POST https://ai-tabel.vercel.app/api/webhook \
+curl -X POST https://time-tracking-service.vercel.app/api/webhook \
   -H "Content-Type: application/json" \
   -H "X-Telegram-Bot-Api-Secret-Token: your-secret-token" \
   -d '{"message":{"text":"test"}}'
 # Должен вернуть 200
 
 # 3. Проверить Vercel logs
-vercel logs https://ai-tabel.vercel.app
+vercel logs https://time-tracking-service.vercel.app
 # или в Vercel UI → Deployments → выбрать deployment → Logs
 ```
 
@@ -122,7 +123,7 @@ Telegram должен отправлять фото на адрес вашего
 # Скопируйте в bot/.env:
 TELEGRAM_BOT_TOKEN=123456:ABCdef...
 TELEGRAM_WEBHOOK_SECRET=your-secret-token
-VERCEL_URL=https://ai-tabel.vercel.app
+VERCEL_URL=https://time-tracking-service.vercel.app
 
 # Запустите регистрацию:
 node bot/register-webhook.js
@@ -130,7 +131,7 @@ node bot/register-webhook.js
 
 # Или вручную через curl:
 curl -X POST "https://api.telegram.org/bot{TOKEN}/setWebhook" \
-  -d url="https://ai-tabel.vercel.app/api/webhook" \
+  -d url="https://time-tracking-service.vercel.app/api/webhook" \
   -d secret_token="your-secret-token"
 ```
 
@@ -138,7 +139,7 @@ curl -X POST "https://api.telegram.org/bot{TOKEN}/setWebhook" \
 
 ```bash
 curl -X POST "https://api.telegram.org/bot{TOKEN}/getWebhookInfo"
-# Должен показать: "url": "https://ai-tabel.vercel.app/api/webhook"
+# Должен показать: "url": "https://time-tracking-service.vercel.app/api/webhook"
 ```
 
 ---
@@ -204,7 +205,7 @@ curl -X POST "https://api.telegram.org/bot{TOKEN}/getWebhookInfo"
 
 ### 3.3 Проверить Dashboard
 
-1. Откройте https://ai-tabel.vercel.app
+1. Откройте https://time-tracking-service.vercel.app
 2. Email: `admin@dashboard.local` (или тот, который настроили в Supabase Auth)
 3. Введите пароль
 

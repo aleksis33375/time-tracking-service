@@ -90,8 +90,8 @@
 Once deployed to Vercel:
 
 ```
-Dashboard:     https://ai-tabel.vercel.app/
-Webhook:       https://ai-tabel.vercel.app/api/webhook
+Dashboard:     https://time-tracking-service.vercel.app/
+Webhook:       https://time-tracking-service.vercel.app/api/webhook
 ```
 
 Or with custom domain:
