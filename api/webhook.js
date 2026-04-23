@@ -89,32 +89,35 @@ async function handlePhoto(msg) {
   const compressedKb = Math.round(compressedBuffer.length / 1024);
   console.log(`Photo: ${originalKb} KB → ${compressedKb} KB`);
 
-  // OCR верхней правой области: дата, время, город, индекс (item 7)
+  // OCR верхней правой области: дата, время, город, индекс
   const stamp = await ocrTopRight(compressedBuffer);
   console.log('Stamp OCR:', stamp);
 
-  // OCR нижней области: имя сотрудника + тип события (item 8)
-  const caption = await ocrBottom(compressedBuffer);
-  console.log('Caption OCR:', caption);
+  // Подпись читаем напрямую из Telegram caption — без OCR
+  const caption = parseCaptionText(msg.caption || '');
+  console.log('Caption (from msg.caption):', caption);
 
-  // Сверка индекса с OBJECT_POSTCODE (item 9)
+  // Резервный timestamp: если OCR штампа не прочитал дату — берём время отправки из Telegram
+  const photoTimestamp = stamp.photoTimestamp ?? new Date(msg.date * 1000).toISOString();
+
+  // Сверка индекса с OBJECT_POSTCODE
   const fraudFlags = [];
   if (stamp.postcode && OBJECT_POSTCODE && stamp.postcode !== OBJECT_POSTCODE) {
     fraudFlags.push('wrong_location');
     console.log(`wrong_location: got ${stamp.postcode}, expected ${OBJECT_POSTCODE}`);
   }
 
-  // Сохранение сжатого фото в Supabase Storage (item 10)
+  // Сохранение сжатого фото в Supabase Storage
   const photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
   if (!photoUrl) {
     await logToSupabase('error', 'webhook-handler', 'Failed to upload photo to storage', { chatId, messageId });
     return;
   }
 
-  // Запись в events (item 11)
+  // Запись в events
   await insertEvent({
     photo_url:           photoUrl,
-    photo_timestamp:     stamp.photoTimestamp,
+    photo_timestamp:     photoTimestamp,
     status:              'pending',
     name_from_photo:     caption.nameFromPhoto,
     event_type:          caption.eventType,
@@ -206,29 +209,6 @@ function parseStampText(raw) {
     postcode: postcodeM ? postcodeM[1] : null,  // "108818" или null
     rawStamp: text,                              // сырой текст для логов
   };
-}
-
-// ── OCR: нижняя область (подпись сотрудника) ─────────────────────────────────
-
-async function ocrBottom(buffer) {
-  const { width, height } = await sharp(buffer).metadata();
-
-  // Подпись занимает нижние ~18% фото, по всей ширине
-  const cropH = Math.floor(height * 0.18);
-  const cropT = height - cropH;
-
-  const region = await sharp(buffer)
-    .extract({ left: 0, top: cropT, width, height: cropH })
-    .resize({ width: width * 2 })   // увеличиваем для лучшего распознавания
-    .greyscale()
-    .normalize()
-    .sharpen()
-    .jpeg({ quality: 95 })
-    .toBuffer();
-
-  const worker = await getTesseractWorker();
-  const { data: { text } } = await worker.recognize(region);
-  return parseCaptionText(text);
 }
 
 // Ключевые фразы для определения типа события
