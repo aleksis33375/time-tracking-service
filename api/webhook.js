@@ -4,14 +4,12 @@
  */
 
 import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
 import { waitUntil } from '@vercel/functions';
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BOT_TOKEN            = process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_SECRET       = process.env.TELEGRAM_WEBHOOK_SECRET;
-const OBJECT_POSTCODE      = process.env.OBJECT_POSTCODE;
 const TG_API               = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const SUPABASE_HEADERS = {
@@ -54,7 +52,7 @@ async function processUpdate(update) {
   const msg = update.message || update.channel_post;
   if (!msg) return;
 
-  // Обрабатываем только фото (item 5)
+  // Обрабатываем только фото
   if (!msg.photo || msg.photo.length === 0) return;
 
   await handlePhoto(msg);
@@ -65,6 +63,7 @@ async function processUpdate(update) {
 async function handlePhoto(msg) {
   const chatId    = msg.chat.id;
   const messageId = msg.message_id;
+  console.log('Photo received', { chatId, messageId });
 
   // Telegram присылает несколько размеров — берём наибольший
   const largest = msg.photo[msg.photo.length - 1];
@@ -73,13 +72,12 @@ async function handlePhoto(msg) {
   const caption = parseCaptionText(msg.caption || '');
   console.log('Caption (from msg.caption):', caption);
 
-  // Резервный timestamp: если фото не скачалось — берём время отправки из Telegram
+  // Резервный timestamp: время отправки из Telegram
   const fallbackTimestamp = new Date(msg.date * 1000).toISOString();
 
   // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
   let compressedBuffer = null;
   let photoUrl = null;
-  let stamp = {};
 
   try {
     const originalBuffer = await downloadTelegramPhoto(largest.file_id);
@@ -92,10 +90,6 @@ async function handlePhoto(msg) {
   }
 
   if (compressedBuffer) {
-    // OCR верхней правой области: дата, время, город, индекс
-    stamp = await ocrTopRight(compressedBuffer);
-    console.log('Stamp OCR:', stamp);
-
     // Сохранение сжатого фото в Supabase Storage
     photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
     if (!photoUrl) {
@@ -103,114 +97,27 @@ async function handlePhoto(msg) {
     }
   }
 
-  const photoTimestamp = stamp.photoTimestamp ?? fallbackTimestamp;
-
-  // Сверка индекса с OBJECT_POSTCODE
-  const fraudFlags = [];
-  if (stamp.postcode && OBJECT_POSTCODE && stamp.postcode !== OBJECT_POSTCODE) {
-    fraudFlags.push('wrong_location');
-    console.log(`wrong_location: got ${stamp.postcode}, expected ${OBJECT_POSTCODE}`);
-  }
+  const photoTimestamp = fallbackTimestamp;
 
   // Запись в events — всегда, даже без фото
   await insertEvent({
-    photo_url:           photoUrl,
-    photo_timestamp:     photoTimestamp,
-    status:              'pending',
-    name_from_photo:     caption.nameFromPhoto,
-    event_type:          caption.eventType,
-    event_type_raw:      caption.eventTypeRaw,
-    postcode_from_photo: stamp.postcode ?? null,
-    fraud_flags:         fraudFlags,
+    photo_url:       photoUrl,
+    photo_timestamp: photoTimestamp,
+    status:          'pending',
+    name_from_photo: caption.nameFromPhoto,
+    event_type:      caption.eventType,
+    event_type_raw:  caption.eventTypeRaw,
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
-    name: caption.nameFromPhoto,
+    name:  caption.nameFromPhoto,
     event: caption.eventTypeRaw,
     photo: photoUrl ? 'ok' : 'missing',
-    postcode: stamp.postcode ?? null,
-    fraud: fraudFlags,
   });
 }
 
-// ── OCR: верхняя правая область (штамп Timestamp Camera) ─────────────────────
+// ── Caption parser ────────────────────────────────────────────────────────────
 
-// Ленивый синглтон воркера — переиспользуется в рамках одного контейнера
-let _worker = null;
-async function getTesseractWorker() {
-  if (!_worker) {
-    _worker = await createWorker(['rus', 'eng'], 1, {
-      cachePath: '/tmp',       // кеш внутри Vercel-контейнера
-      cacheMethod: 'readWrite',
-    });
-  }
-  return _worker;
-}
-
-async function ocrTopRight(buffer) {
-  const meta = await sharp(buffer).metadata();
-  const { width, height } = meta;
-
-  // Stamp занимает правые ~55% и верхние ~22% фото
-  const cropW = Math.floor(width  * 0.55);
-  const cropH = Math.floor(height * 0.22);
-  const cropL = width - cropW;
-
-  const region = await sharp(buffer)
-    .extract({ left: cropL, top: 0, width: cropW, height: cropH })
-    .resize({ width: cropW * 2 })   // увеличиваем для лучшего распознавания
-    .greyscale()
-    .normalize()                    // авто-контраст
-    .sharpen()
-    .jpeg({ quality: 95 })
-    .toBuffer();
-
-  const worker = await getTesseractWorker();
-  const { data: { text } } = await worker.recognize(region);
-  return parseStampText(text);
-}
-
-const MONTHS_RU = {
-  'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4,
-  'май': 5, 'мая': 5, 'июн': 6, 'июл': 7,
-  'авг': 8, 'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12,
-};
-
-function parseStampText(raw) {
-  const text = raw.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-
-  // Время: HH:MM:SS  (OCR иногда путает : и .)
-  const timeM = text.match(/(\d{1,2})[:.](\d{2})[:.](\d{2})/);
-
-  // Дата с русским месяцем: "16 апр. 2026 г."
-  const dateM = text.match(/(\d{1,2})\s+([а-яёА-ЯЁ]{2,4})\.?\s+(\d{4})/);
-
-  // Индекс: 6 цифр подряд
-  const postcodeM = text.match(/\b(\d{6})\b/);
-
-  let photoTimestamp = null;
-  if (dateM && timeM) {
-    const day   = parseInt(dateM[1], 10);
-    const month = MONTHS_RU[dateM[2].toLowerCase().slice(0, 3)];
-    const year  = parseInt(dateM[3], 10);
-    const hh    = parseInt(timeM[1], 10);
-    const mm    = parseInt(timeM[2], 10);
-    const ss    = parseInt(timeM[3], 10);
-    if (month) {
-      // Фото сделано в Москве (UTC+3) — конвертируем в UTC
-      const utc = new Date(Date.UTC(year, month - 1, day, hh - 3, mm, ss));
-      photoTimestamp = utc.toISOString();
-    }
-  }
-
-  return {
-    photoTimestamp,                              // ISO UTC или null
-    postcode: postcodeM ? postcodeM[1] : null,  // "108818" или null
-    rawStamp: text,                              // сырой текст для логов
-  };
-}
-
-// Ключевые фразы для определения типа события
 const ARRIVAL_PATTERNS = [
   /начал[оа].*смен/i,
   /приход/i,
@@ -359,7 +266,9 @@ async function logToSupabase(level, source, message, meta = {}) {
       method: 'POST',
       body: JSON.stringify({ level, source, message, meta }),
     });
-  } catch { /* не роняем хендлер из-за ошибки логирования */ }
+  } catch (err) {
+    console.error('logToSupabase failed:', err);
+  }
 }
 
-export { supabaseFetch, logToSupabase, OBJECT_POSTCODE };
+export { supabaseFetch, logToSupabase };
