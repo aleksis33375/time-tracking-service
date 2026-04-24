@@ -1,7 +1,8 @@
 /**
  * GET /api/sign-photo?path=photos/{chatId}/{messageId}.jpg
- * Генерирует Supabase Storage signed URL через service role key.
- * Требует валидного Bearer-токена пользователя в заголовке Authorization.
+ * Прокси для файлов Supabase Storage.
+ * Валидирует Bearer-токен пользователя, затем скачивает файл через service role key
+ * и отдаёт байты напрямую — без signed URL (они нестабильны с некоторыми путями).
  */
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -34,20 +35,22 @@ export default async function handler(req, res) {
   const bucket = path.slice(0, slash);
   const obj    = path.slice(slash + 1);
 
-  const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${obj}`, {
-    method:  'POST',
+  // Скачиваем файл напрямую через service role key
+  const fileRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${obj}`, {
     headers: {
       'apikey':        SERVICE_KEY,
       'Authorization': `Bearer ${SERVICE_KEY}`,
-      'Content-Type':  'application/json',
     },
-    body: JSON.stringify({ expiresIn: 300 }),
   });
 
-  const data = await signRes.json();
-  if (!signRes.ok || !data.signedURL) {
-    return res.status(500).json({ error: data.error || 'Failed to create signed URL' });
+  if (!fileRes.ok) {
+    return res.status(fileRes.status).json({ error: 'File not found' });
   }
 
-  res.status(200).json({ signedURL: `${SUPABASE_URL}${data.signedURL}` });
+  const contentType = fileRes.headers.get('content-type') || 'image/jpeg';
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.status(200).end(buffer);
 }

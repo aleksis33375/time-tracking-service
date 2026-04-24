@@ -1561,20 +1561,9 @@
     // Показ фото из Supabase Storage по клику
     async function attShowPhoto(photoUrl) {
       if (!photoUrl) return;
-      let url = photoUrl;
-      // Если относительный путь — получить signed URL
-      if (!photoUrl.startsWith('http')) {
-        const bucket = photoUrl.split('/')[0];
-        const path   = photoUrl.slice(bucket.length + 1);
-        const token   = getToken();
-        const signRes = await fetch(`/api/sign-photo?path=${encodeURIComponent(photoUrl)}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const signData = signRes.ok ? await signRes.json() : null;
-        if (signData && signData.signedURL) url = signData.signedURL;
-        else return;
-      }
-      window.open(url, '_blank');
+      const blobUrl = await getSignedUrl(photoUrl);
+      if (!blobUrl) return;
+      window.open(blobUrl, '_blank');
     }
 
     /* ─── Review / Manual correction ───────────────────────────────────── */
@@ -2603,12 +2592,13 @@
     }
 
     async function getSignedUrl(storagePath) {
-      const token   = getToken();
-      const signRes = await fetch(`/api/sign-photo?path=${encodeURIComponent(storagePath)}`, {
+      const token = getToken();
+      const resp  = await fetch(`/api/sign-photo?path=${encodeURIComponent(storagePath)}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const data = signRes.ok ? await signRes.json() : null;
-      return (data && data.signedURL) ? data.signedURL : null;
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      return URL.createObjectURL(blob);
     }
 
     async function archiveEmployee(id, name) {
