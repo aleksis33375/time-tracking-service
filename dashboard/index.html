@@ -1290,7 +1290,7 @@
 
       const [employees, todayEvents, reviewAll] = await Promise.all([
         guardedFetch('/rest/v1/employees?select=id,display_name,team,position&deleted_at=is.null&order=display_name.asc'),
-        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status,fraud_flags&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status,fraud_flags,name_from_photo&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
         guardedFetch('/rest/v1/events?select=id&status=eq.needs_review'),
       ]);
 
@@ -1330,8 +1330,8 @@
       // Группируем события по сотруднику
       const byEmp = {};
       for (const ev of eventsArr) {
-        const eid = ev.employee_id || '_unknown';
-        if (!byEmp[eid]) byEmp[eid] = { arrive: null, depart: null, hours: null, statuses: [], frauds: [] };
+        const eid = ev.employee_id || ('name:' + (ev.name_from_photo || '_unknown'));
+        if (!byEmp[eid]) byEmp[eid] = { arrive: null, depart: null, hours: null, statuses: [], frauds: [], nameFromPhoto: ev.name_from_photo || null };
         const slot = byEmp[eid];
         if (ev.event_type === 'start') {
           if (!slot.arrive || ev.photo_timestamp < slot.arrive) slot.arrive = ev.photo_timestamp;
@@ -1376,7 +1376,7 @@
         const slot = byEmp[eid];
         const emp  = empMap[eid];
         const team = emp ? (emp.team || '—') : '—';
-        const name = emp ? emp.display_name : `Неизвестный (${eid.slice(0,8)})`;
+        const name = emp ? emp.display_name : (slot.nameFromPhoto || 'Неизвестный');
 
         // Разделитель бригады
         if (team !== lastTeam) {
@@ -1566,10 +1566,12 @@
       if (!photoUrl.startsWith('http')) {
         const bucket = photoUrl.split('/')[0];
         const path   = photoUrl.slice(bucket.length + 1);
-        const res = await guardedFetch(`/storage/v1/object/sign/${bucket}/${path}`, {
-          method: 'POST', body: JSON.stringify({ expiresIn: 300 })
+        const token   = getToken();
+        const signRes = await fetch(`/api/sign-photo?path=${encodeURIComponent(photoUrl)}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (res && res.signedURL) url = SUPABASE_URL + res.signedURL;
+        const signData = signRes.ok ? await signRes.json() : null;
+        if (signData && signData.signedURL) url = signData.signedURL;
         else return;
       }
       window.open(url, '_blank');
@@ -2601,14 +2603,12 @@
     }
 
     async function getSignedUrl(storagePath) {
-      const slash  = storagePath.indexOf('/');
-      const bucket = storagePath.slice(0, slash);
-      const obj    = storagePath.slice(slash + 1);
-      const res = await supabaseFetch(`/storage/v1/object/sign/${bucket}/${obj}`, {
-        method: 'POST', body: JSON.stringify({ expiresIn: 3600 })
+      const token   = getToken();
+      const signRes = await fetch(`/api/sign-photo?path=${encodeURIComponent(storagePath)}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (res && res.signedURL) return `${SUPABASE_URL}${res.signedURL}`;
-      return null;
+      const data = signRes.ok ? await signRes.json() : null;
+      return (data && data.signedURL) ? data.signedURL : null;
     }
 
     async function archiveEmployee(id, name) {
