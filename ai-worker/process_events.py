@@ -370,13 +370,15 @@ def calculate_hours(employee_id: str, current_event: dict) -> float | None:
     day_end = day_start + timedelta(days=1)
 
     # Все события сотрудника за этот день (включая текущее — оно уже processing)
+    # needs_review тоже включаем: arrival мог уйти в needs_review (неполный день утром),
+    # а вечерний departure должен его найти и посчитать часы
     rows = sb_get(
         "/rest/v1/events",
         f"?employee_id=eq.{employee_id}"
         f"&photo_timestamp=gte.{day_start.isoformat()}"
         f"&photo_timestamp=lt.{day_end.isoformat()}"
-        f"&status=in.(done,processing)"
-        f"&select=event_type,photo_timestamp"
+        f"&status=in.(done,processing,needs_review)"
+        f"&select=id,event_type,photo_timestamp"
         f"&order=photo_timestamp.asc",
     )
     if not isinstance(rows, list) or not rows:
@@ -398,6 +400,20 @@ def calculate_hours(employee_id: str, current_event: dict) -> float | None:
         return None   # уход раньше прихода — аномалия
 
     hours = (last_departure - first_arrival).total_seconds() / 3600
+
+    # Закрываем arrival-события которые были в needs_review (неполный день утром)
+    # теперь пара arrival+departure есть — переводим их в done
+    arrival_ids_to_close = [
+        r["id"] for r in arrivals
+        if r.get("id") and r.get("event_type") == "arrival"
+    ]
+    if arrival_ids_to_close:
+        id_filter = "(" + ",".join(arrival_ids_to_close) + ")"
+        sb_patch(
+            f"/rest/v1/events?id=in.{id_filter}&status=eq.needs_review",
+            {"status": "done", "hours": round(hours, 2)},
+        )
+
     return round(hours, 2)
 
 
