@@ -600,8 +600,8 @@
         </select>
         <select class="input" id="att-filter-type" style="width:160px;" onchange="renderAttendance()">
           <option value="">Все типы</option>
-          <option value="start">Начало смены</option>
-          <option value="end">Конец смены</option>
+          <option value="arrival">Начало смены</option>
+          <option value="departure">Конец смены</option>
         </select>
         <span id="att-count-label" style="align-self:center;font-size:13px;color:var(--muted);margin-left:4px;"></span>
       </div>
@@ -902,8 +902,8 @@
           <div class="form-group">
             <label class="form-label">Тип события</label>
             <select class="input" id="rv-edit-event-type">
-              <option value="start">Начало смены</option>
-              <option value="end">Конец смены</option>
+              <option value="arrival">Начало смены</option>
+              <option value="departure">Конец смены</option>
             </select>
           </div>
           <div class="form-group">
@@ -1336,9 +1336,9 @@
         const eid = ev.employee_id || ('name:' + (ev.name_from_photo || '_unknown'));
         if (!byEmp[eid]) byEmp[eid] = { arrive: null, depart: null, hours: null, statuses: [], frauds: [], nameFromPhoto: ev.name_from_photo || null };
         const slot = byEmp[eid];
-        if (ev.event_type === 'start') {
+        if (ev.event_type === 'arrival') {
           if (!slot.arrive || ev.photo_timestamp < slot.arrive) slot.arrive = ev.photo_timestamp;
-        } else if (ev.event_type === 'end') {
+        } else if (ev.event_type === 'departure') {
           if (!slot.depart || ev.photo_timestamp > slot.depart) slot.depart = ev.photo_timestamp;
         }
         if (ev.hours != null) slot.hours = ev.hours;
@@ -1522,7 +1522,7 @@
         return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
       };
 
-      const TYPE_LABEL = { start: '<span style="color:var(--success);font-weight:600;">▶ Приход</span>', end: '<span style="color:var(--accent);font-weight:600;">■ Уход</span>' };
+      const TYPE_LABEL = { arrival: '<span style="color:var(--success);font-weight:600;">▶ Приход</span>', departure: '<span style="color:var(--accent);font-weight:600;">■ Уход</span>' };
       const STATUS_STYLE = { done: '', needs_review: 'background:var(--danger-bg);', pending: 'background:var(--warn-bg);', processing: 'background:var(--warn-bg);' };
       const STATUS_LABEL = {
         done:         '<span style="color:var(--success);font-weight:600;">✓ Учтено</span>',
@@ -1629,7 +1629,7 @@
       };
 
       const FRAUD_COLOR = { face_mismatch: '#DC2626', wrong_location: '#D97706', incomplete_day: '#7C3AED' };
-      const TYPE_LABEL  = { start: '▶ Приход', end: '■ Уход' };
+      const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';
       for (const ev of rows) {
@@ -1692,7 +1692,7 @@
         ).join('');
 
       // Тип и часы
-      document.getElementById('rv-edit-event-type').value = ev.event_type || 'start';
+      document.getElementById('rv-edit-event-type').value = ev.event_type || 'arrival';
       document.getElementById('rv-edit-hours').value      = ev.hours != null ? ev.hours : '';
       document.getElementById('rv-edit-status').value     = 'done';
 
