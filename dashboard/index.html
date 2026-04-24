@@ -982,6 +982,9 @@
                 <button type="button" class="btn btn-sm" id="emp-photo-clear"
                   style="display:none;color:var(--danger);background:var(--danger-bg);border:1px solid #FECACA;"
                   onclick="clearEmpPhoto()">Убрать</button>
+                <button type="button" class="btn btn-sm" id="emp-photo-reset"
+                  style="display:none;color:var(--warning);background:#FFF3E0;border:1px solid #FED7AA;"
+                  onclick="resetFaceEmbedding()">Сбросить эталон</button>
               </div>
               <div style="font-size:12px;color:var(--muted);margin-top:6px;">JPG / PNG, лицо крупным планом</div>
               <input type="file" id="emp-photo-input" accept="image/*" style="display:none" onchange="empPhotoSelected(this)">
@@ -2467,6 +2470,20 @@
       resetEmpPhotoUI();
     }
 
+    async function resetFaceEmbedding() {
+      const id = document.getElementById('emp-form-id').value;
+      const name = document.getElementById('emp-form-name').value;
+      if (!id) return;
+      if (!confirm(`Сбросить эталонное фото для «${name}»?\n\nПри следующей отметке это фото станет новым эталоном.`)) return;
+
+      await supabaseFetch(`/rest/v1/employees?id=eq.${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ face_embedding: null, ref_photo_url: null }),
+      });
+      resetEmpPhotoUI();
+      document.getElementById('emp-photo-reset').style.display = 'none';
+    }
+
     function openEmployeeModal() {
       document.getElementById('emp-form-id').value       = '';
       document.getElementById('emp-form-name').value     = '';
@@ -2495,6 +2512,9 @@
       document.getElementById('emp-modal-title').textContent  = 'Редактировать сотрудника';
       document.getElementById('emp-save-btn').textContent     = 'Сохранить';
       resetEmpPhotoUI();
+      // Показываем кнопку «Сбросить эталон» только когда есть эталонное фото
+      document.getElementById('emp-photo-reset').style.display =
+        emp.ref_photo_url ? '' : 'none';
       if (emp.ref_photo_url) {
         const signedUrl = await getSignedUrl(emp.ref_photo_url);
         if (signedUrl) {

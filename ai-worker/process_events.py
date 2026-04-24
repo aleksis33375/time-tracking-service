@@ -166,6 +166,16 @@ def find_employee_by_name(name: str) -> dict | None:
             best_ratio = ratio
             best_emp   = emp
 
+    # Шаг 1.5 — однозначная подстрока: "Саша" → "Саша (РР от Ярика)"
+    # Помогает когда рабочий пишет только имя, а в базе полное имя с пояснением.
+    # Срабатывает только при ровно одном совпадении — иначе передаём в fuzzy.
+    contains_matches = [
+        emp for emp in all_employees
+        if name_lower in emp["display_name"].lower()
+    ]
+    if len(contains_matches) == 1:
+        return contains_matches[0]
+
     if best_ratio >= FUZZY_THRESHOLD:
         return best_emp
 
@@ -240,6 +250,40 @@ def verify_face(photo_url: str, employee: dict) -> bool | None:
         [ref_embedding], event_encoding, tolerance=FACE_TOLERANCE
     )
     return bool(matches[0])
+
+
+def bootstrap_face_embedding(employee: dict, photo_url: str) -> bool:
+    """
+    Первое фото сотрудника (face_embedding отсутствует) → сохраняем как эталон.
+    Возвращает True если embedding успешно сохранён.
+    """
+    if not photo_url:
+        return False
+
+    photo_bytes = download_storage_photo(photo_url)
+    if not photo_bytes:
+        return False
+
+    try:
+        encoding = compute_face_encoding(photo_bytes)
+    except TimeoutError:
+        return False
+
+    if encoding is None:
+        return False  # лицо не найдено на фото
+
+    sb_patch(
+        f"/rest/v1/employees?id=eq.{employee['id']}",
+        {
+            "face_embedding": encoding.tolist(),
+            "ref_photo_url":  photo_url,
+        },
+    )
+    log("info", f"Face embedding bootstrapped: {employee['display_name']}", {
+        "employee_id": employee["id"],
+        "photo_url":   photo_url,
+    })
+    return True
 
 
 # ── п.7 Сборка fraud_flags + маршрутизация на needs_review ───────────────────
@@ -478,8 +522,15 @@ def main() -> None:
             print(f"     no match for {name!r}", flush=True)
 
         # п.6 Face recognition верификация
-        photo_url  = event.get("photo_url") or ""
-        face_match = verify_face(photo_url, employee) if employee else None
+        photo_url = event.get("photo_url") or ""
+
+        if employee and not employee.get("face_embedding"):
+            # Первое фото этого сотрудника — сохраняем как эталон
+            bootstrapped = bootstrap_face_embedding(employee, photo_url)
+            face_match   = None  # верифицировать не с чем — пропускаем
+            print(f"     bootstrap embedding: {'ok' if bootstrapped else 'failed'}", flush=True)
+        else:
+            face_match = verify_face(photo_url, employee) if employee else None
         print(f"     face_match: {face_match}", flush=True)
 
         # п.7 Сборка fraud_flags, маршрутизация на needs_review
