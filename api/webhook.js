@@ -120,17 +120,24 @@ async function handlePhoto(msg) {
 
 const ARRIVAL_PATTERNS = [
   /начал[оа].*смен/i,
+  /начал[оа]/i,
   /приход/i,
   /пришёл/i,
   /пришел/i,
 ];
 const DEPARTURE_PATTERNS = [
   /конец.*смен/i,
+  /конца/i,              // "конца смены", "конца втарои смены"
   /окончани[ея].*смен/i,
+  /кан[её]?[цч][аыео]?/i, // "канца", "канец", "канча" — ошибочное написание "конца"
   /уход/i,
   /ушёл/i,
   /ушел/i,
 ];
+
+// Ключевые слова для извлечения имени (всё до первого из них = имя)
+const EVENT_KEYWORDS_RE =
+  /^(.+?)\s+(?:начал[оа]|конец|конца|окончани[ея]|кан[её]?[цч]|приход|уход|пришёл|пришел|ушёл|ушел)/i;
 
 function parseCaptionText(raw) {
   const text = raw.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
@@ -147,12 +154,11 @@ function parseCaptionText(raw) {
     eventTypeRaw = 'конец смены';
   }
 
-  // Имя = всё до ключевого слова события
-  // Пример: "Дима начало смены" → имя = "Дима"
+  // Имя = всё до первого ключевого слова события
+  // Примеры: "Дима начало смены" → "Дима"
+  //          "Али канца втарои смены" → "Али"
   let nameFromPhoto = null;
-  const nameMatch = text.match(
-    /^(.+?)\s+(?:начал[оа]|конец|окончани[ея]|приход|уход|пришёл|пришел|ушёл|ушел)/i
-  );
+  const nameMatch = text.match(EVENT_KEYWORDS_RE);
   if (nameMatch) {
     nameFromPhoto = nameMatch[1].trim();
   } else if (text.length > 0 && !eventType) {
