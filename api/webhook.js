@@ -157,11 +157,22 @@ function parseCaptionText(raw) {
   // Имя = всё до первого ключевого слова события
   // Примеры: "Дима начало смены" → "Дима"
   //          "Али канца втарои смены" → "Али"
+  //          "Начало смены Андрей!" → "Андрей"  (имя после ключевого слова)
   let nameFromPhoto = null;
   const nameMatch = text.match(EVENT_KEYWORDS_RE);
   if (nameMatch) {
     nameFromPhoto = nameMatch[1].trim();
-  } else if (text.length > 0 && !eventType) {
+  } else if (eventType) {
+    // Тип определён, но имя не найдено до ключевого слова → ищем после.
+    // Убираем ключевые слова события и служебные слова ("смены", "второй" и т.п.)
+    const remainder = text
+      .replace(/(?:начал[оа]|конец|конца|окончани[ея]|кан[её]?[цч]\w*|приход|уход|пришёл|пришел|ушёл|ушел)\b/gi, '')
+      .replace(/\bсмен\w*/gi, '')
+      .replace(/\b(?:второй|первой|третьей|втарои|второго|первого)\b/gi, '')
+      .replace(/[!.,\s]+/g, ' ')
+      .trim();
+    nameFromPhoto = remainder || null;
+  } else if (text.length > 0) {
     // Тип не распознан — весь текст считаем именем
     nameFromPhoto = text;
   }
