@@ -139,6 +139,13 @@ const DEPARTURE_PATTERNS = [
 const EVENT_KEYWORDS_RE =
   /^(.+?)\s+(?:начал[оа]|конец|конца|окончани[ея]|кан[её]?[цч]|приход|уход|пришёл|пришел|ушёл|ушел)/i;
 
+// Убирает trailing/leading знаки препинания и лишние пробелы из имени
+function cleanName(str) {
+  if (!str) return null;
+  const s = str.replace(/^[\s.,!?;:]+|[\s.,!?;:]+$/g, '').trim();
+  return s || null;
+}
+
 function parseCaptionText(raw) {
   const text = raw.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -161,7 +168,7 @@ function parseCaptionText(raw) {
   let nameFromPhoto = null;
   const nameMatch = text.match(EVENT_KEYWORDS_RE);
   if (nameMatch) {
-    nameFromPhoto = nameMatch[1].trim();
+    nameFromPhoto = cleanName(nameMatch[1]);
   } else if (eventType) {
     // Тип определён, но имя не найдено до ключевого слова → ищем после.
     // Убираем ключевые слова события и служебные слова ("смены", "второй" и т.п.)
@@ -171,10 +178,10 @@ function parseCaptionText(raw) {
       .replace(/\b(?:второй|первой|третьей|втарои|второго|первого)\b/gi, '')
       .replace(/[!.,\s]+/g, ' ')
       .trim();
-    nameFromPhoto = remainder || null;
+    nameFromPhoto = cleanName(remainder) || null;
   } else if (text.length > 0) {
     // Тип не распознан — весь текст считаем именем
-    nameFromPhoto = text;
+    nameFromPhoto = cleanName(text);
   }
 
   return {

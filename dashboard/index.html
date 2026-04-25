@@ -1302,7 +1302,13 @@
       const reviewArr  = reviewAll  || [];
 
       // Стат-карточки
-      const uniqueToday = new Set(eventsArr.filter(e => e.employee_id).map(e => e.employee_id));
+      // Считаем уникальных рабочих среди arrivals: по employee_id если матч есть,
+      // иначе по name_from_photo — включает pending события ещё не обработанные воркером
+      const uniqueToday = new Set(
+        eventsArr
+          .filter(e => e.event_type === 'arrival' && (e.employee_id || e.name_from_photo))
+          .map(e => e.employee_id || ('name:' + e.name_from_photo))
+      );
       document.getElementById('stat-today').textContent     = uniqueToday.size;
       document.getElementById('stat-employees').textContent = empArr.length;
       document.getElementById('stat-review').textContent    = reviewArr.length;
