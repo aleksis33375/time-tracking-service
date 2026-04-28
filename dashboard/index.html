@@ -70,7 +70,7 @@
     /* ─── Navbar ─────────────────────────────────────────────────────────── */
     .navbar {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 16px; height: 40px;
+      padding: 0 20px; height: 56px;
       background: var(--surface); border-bottom: 1px solid var(--border);
       position: sticky; top: 0; z-index: 100;
     }
@@ -224,10 +224,10 @@
     .ts-wrap { overflow-x: auto; }
     .ts-table {
       border-collapse: collapse; background: var(--surface);
-      font-size: 12px; white-space: nowrap; width: 100%; line-height: 1.25;
+      font-size: 12px; white-space: nowrap; width: 100%;
     }
     .ts-table thead th {
-      padding: 5px 6px; text-align: center; font-size: 10px; font-weight: 700;
+      padding: 8px 6px; text-align: center; font-size: 10px; font-weight: 700;
       text-transform: uppercase; letter-spacing: .05em;
       color: var(--muted); background: #F9FAFB;
       border-bottom: 1px solid var(--border);
@@ -235,7 +235,7 @@
       position: sticky; top: 0; z-index: 1;
     }
     .ts-table tbody td {
-      padding: 4px 5px; border-bottom: 1px solid #F3F4F6;
+      padding: 7px 5px; border-bottom: 1px solid #F3F4F6;
       border-right: 1px solid #F3F4F6; text-align: center; vertical-align: middle;
     }
     .ts-table tbody tr:last-child td { border-bottom: none; }
@@ -257,8 +257,14 @@
     .ts-col-total, .ts-col-sum {
       min-width: 68px; font-weight: 700; background: #F9FAFB !important;
     }
+    .ts-subtotal td {
+      background: #F0FDF4 !important; font-weight: 600;
+      color: var(--success); border-bottom: 2px solid #BBF7D0 !important;
+    }
+    .ts-subtotal .ts-col-name,
+    .ts-subtotal .ts-col-role { background: #F0FDF4 !important; }
     .ts-divider td {
-      height: 4px; background: var(--bg) !important;
+      height: 6px; background: var(--bg) !important;
       border: none !important; padding: 0 !important;
     }
 
@@ -290,6 +296,10 @@
     .ts-pt-btn:last-child { border-right: none; }
     .ts-pt-btn:hover { background: #F3F4F6; color: var(--text); }
     .ts-pt-btn.ts-pt-active { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+    .ts-team-header { cursor: pointer; user-select: none; }
+    .ts-team-header:hover td { background: #E6FFF2 !important; }
+    .ts-arrow { display: inline-block; font-size: 10px; margin-right: 5px; transition: transform .15s; width: 10px; }
+    .ts-arrow.collapsed { transform: rotate(-90deg); }
 
     /* ─── Print styles ──────────────────────────────────────────────────── */
     #ts-print-header { display: none; margin-bottom: 14px; }
@@ -301,7 +311,7 @@
 
       /* Скрываем всё лишнее */
       .navbar, .mobile-nav, #ts-photo-tooltip,
-      #ts-search, #ts-excel-btn, #ts-pdf-btn,
+      #ts-search, #ts-toggle-all-btn, #ts-excel-btn, #ts-pdf-btn,
       #ts-nav-prev, #ts-nav-next, .ts-pt-btn, #ts-custom-wrap,
       #ts-loading, #ts-empty, .modal-backdrop { display: none !important; }
 
@@ -322,6 +332,7 @@
       thead { display: table-header-group; }
       tbody tr { page-break-inside: avoid; }
       .ts-divider { page-break-after: always; break-after: page; }
+      .ts-subtotal { page-break-inside: avoid; break-inside: avoid; }
     }
 
     /* ─── Responsive ─────────────────────────────────────────────────────── */
@@ -484,26 +495,16 @@
     </div>
 
     <div class="page" id="page-timesheet">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <span style="font-size:17px;font-weight:700;color:var(--text);white-space:nowrap;">Табель</span>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <div style="display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;flex-shrink:0;">
-            <button class="ts-pt-btn ts-pt-active" id="ts-pt-month"  onclick="setPeriodType('month')">Месяц</button>
-            <button class="ts-pt-btn"              id="ts-pt-week"   onclick="setPeriodType('week')">Неделя</button>
-            <button class="ts-pt-btn"              id="ts-pt-day"    onclick="setPeriodType('day')">День</button>
-            <button class="ts-pt-btn"              id="ts-pt-custom" onclick="setPeriodType('custom')">Период</button>
-          </div>
-          <button class="btn btn-outline btn-sm" id="ts-nav-prev" onclick="tsNavPrev()">←</button>
-          <span id="ts-nav-label" style="font-weight:600;min-width:140px;text-align:center;font-size:13px;color:var(--text);"></span>
-          <button class="btn btn-outline btn-sm" id="ts-nav-next" onclick="tsNavNext()">→</button>
-          <div id="ts-custom-wrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-            <input type="date" class="input" id="ts-from" style="width:140px;">
-            <span style="color:var(--muted);">—</span>
-            <input type="date" class="input" id="ts-to"   style="width:140px;">
-            <button class="btn btn-primary btn-sm" onclick="tsApplyCustom()">Показать</button>
-          </div>
-          <input class="input" id="ts-search" style="width:190px;"
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+        <div>
+          <div class="page-title">Табель</div>
+          <div class="page-sub" id="ts-period-label">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input class="input" id="ts-search" style="width:210px;"
             placeholder="Поиск по ФИО..." oninput="tsSearchFilter()">
+          <button class="btn btn-outline btn-sm" onclick="tsToggleAll()" id="ts-toggle-all-btn"
+            title="Свернуть / развернуть все бригады">Свернуть все</button>
           <button class="btn btn-outline btn-sm" id="ts-excel-btn" onclick="downloadExcel()"
             title="Скачать Excel (листы по неделям)">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -520,6 +521,25 @@
             </svg>
             <span class="ts-btn-label">PDF</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Выбор периода -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;flex-shrink:0;">
+          <button class="ts-pt-btn ts-pt-active" id="ts-pt-month"  onclick="setPeriodType('month')">Месяц</button>
+          <button class="ts-pt-btn"              id="ts-pt-week"   onclick="setPeriodType('week')">Неделя</button>
+          <button class="ts-pt-btn"              id="ts-pt-day"    onclick="setPeriodType('day')">День</button>
+          <button class="ts-pt-btn"              id="ts-pt-custom" onclick="setPeriodType('custom')">Период</button>
+        </div>
+        <button class="btn btn-outline btn-sm" id="ts-nav-prev" onclick="tsNavPrev()">←</button>
+        <span id="ts-nav-label" style="font-weight:600;min-width:140px;text-align:center;font-size:14px;color:var(--text);"></span>
+        <button class="btn btn-outline btn-sm" id="ts-nav-next" onclick="tsNavNext()">→</button>
+        <div id="ts-custom-wrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+          <input type="date" class="input" id="ts-from" style="width:148px;">
+          <span style="color:var(--muted);">—</span>
+          <input type="date" class="input" id="ts-to"   style="width:148px;">
+          <button class="btn btn-primary btn-sm" onclick="tsApplyCustom()">Показать</button>
         </div>
       </div>
 
@@ -2714,29 +2734,78 @@
       tipVisible = false;
     }
 
-    /* ─── Timesheet search ───────────────────────────────────────────────── */
-    let tsSearchQ = '';
+    /* ─── Timesheet search & collapse ───────────────────────────────────── */
+    const tsCollapsed = new Set();
+    let   tsSearchQ   = '';
 
     function tsSearchFilter() {
       tsSearchQ = (document.getElementById('ts-search').value || '').toLowerCase().trim();
       applyTsVisibility();
     }
 
+    function tsToggleTeam(tid) {
+      if (tsCollapsed.has(tid)) tsCollapsed.delete(tid);
+      else                       tsCollapsed.add(tid);
+      applyTsVisibility();
+    }
+
+    function tsToggleAll() {
+      // Определяем все teamId в таблице
+      const teamIds = [...new Set(
+        [...document.querySelectorAll('#ts-tbody tr[data-team-id][data-emp-name]')]
+          .map(r => Number(r.dataset.teamId))
+      )];
+      const allCollapsed = teamIds.every(id => tsCollapsed.has(id));
+      if (allCollapsed) {
+        teamIds.forEach(id => tsCollapsed.delete(id));
+        document.getElementById('ts-toggle-all-btn').textContent = 'Свернуть все';
+      } else {
+        teamIds.forEach(id => tsCollapsed.add(id));
+        document.getElementById('ts-toggle-all-btn').textContent = 'Развернуть все';
+      }
+      applyTsVisibility();
+    }
+
     function applyTsVisibility() {
       const q = tsSearchQ;
+      // Какие бригады имеют хоть одного совпадающего сотрудника
       const teamVisible = {};
 
       for (const row of document.querySelectorAll('#ts-tbody tr[data-emp-name]')) {
-        const tid     = Number(row.dataset.teamId);
-        const empName = row.dataset.empName || '';
-        const matches = !q || empName.includes(q);
-        row.style.display = matches ? '' : 'none';
+        const tid      = Number(row.dataset.teamId);
+        const empName  = row.dataset.empName || '';
+        const matches  = !q || empName.includes(q);
+        const hidden   = !matches || tsCollapsed.has(tid);
+        row.style.display = hidden ? 'none' : '';
         if (matches) teamVisible[tid] = true;
+      }
+
+      for (const row of document.querySelectorAll('#ts-tbody tr.ts-team-header')) {
+        const tid = Number(row.dataset.teamId);
+        // Скрываем подитог только если нет совпадений при поиске
+        row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
+        // Обновляем стрелку
+        const arrow = document.getElementById(`ts-arrow-${tid}`);
+        if (arrow) {
+          if (tsCollapsed.has(tid)) arrow.classList.add('collapsed');
+          else                       arrow.classList.remove('collapsed');
+        }
       }
 
       for (const row of document.querySelectorAll('#ts-tbody tr.ts-divider')) {
         const tid = Number(row.dataset.teamId);
         row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
+      }
+
+      // Синхронизируем кнопку «Свернуть/Развернуть все»
+      const btn = document.getElementById('ts-toggle-all-btn');
+      if (btn) {
+        const teamIds = [...new Set(
+          [...document.querySelectorAll('#ts-tbody tr[data-emp-name]')]
+            .map(r => Number(r.dataset.teamId))
+        )];
+        const allCollapsed = teamIds.length && teamIds.every(id => tsCollapsed.has(id));
+        btn.textContent = allCollapsed ? 'Развернуть все' : 'Свернуть все';
       }
     }
 
@@ -2865,7 +2934,8 @@
       document.getElementById('ts-loading').style.display         = 'flex';
       document.getElementById('ts-table-container').style.display = 'none';
       document.getElementById('ts-empty').style.display           = 'none';
-      // Сброс поиска при смене периода
+      // Сброс поиска и сворачивания при смене периода
+      tsCollapsed.clear();
       tsSearchQ = '';
       const srch = document.getElementById('ts-search');
       if (srch) srch.value = '';
@@ -2877,7 +2947,8 @@
       }
       const { days, startISO, endISO, prevStartISO, prevEndISO, label } = period;
 
-      document.getElementById('ts-nav-label').textContent = label;
+      document.getElementById('ts-period-label').textContent = label;
+      document.getElementById('ts-nav-label').textContent    = label;
 
       const [employees, events, prevEvents] = await Promise.all([
         guardedFetch(
@@ -3039,10 +3110,10 @@
             : `<span style="color:#D1D5DB;">0</span>`;
 
           html += `<tr data-team-id="${tid}" data-emp-name="${escHtml(emp.display_name.toLowerCase())}">
-            <td class="ts-col-name" style="padding:4px 8px;">
+            <td class="ts-col-name" style="padding:8px 8px;">
               <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
             </td>
-            <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:4px 6px;">${escHtml(emp.position || '—')}</td>
+            <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:8px 6px;">${escHtml(emp.position || '—')}</td>
             <td class="ts-mob-hide">${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
             <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
             <td class="ts-mob-hide">${prevCell}</td>
@@ -3051,6 +3122,18 @@
             <td class="ts-col-sum">${sum ? sum.toLocaleString('ru', {maximumFractionDigits:0}) : '—'}</td>
           </tr>`;
         }
+
+        // Подитог бригады (кликабельный — сворачивание)
+        html += `<tr class="ts-subtotal ts-team-header" data-team-id="${tid}" onclick="tsToggleTeam(${tid})">
+          <td class="ts-col-name" style="padding:8px 8px;">
+            <span class="ts-arrow" id="ts-arrow-${tid}">▼</span>${escHtml(team)}<span class="ts-mob-only" style="color:var(--muted);font-size:11px;margin-left:4px;">(${members.length} чел.)</span>
+          </td>
+          <td class="ts-col-role ts-mob-hide">${members.length} чел.</td>
+          <td class="ts-mob-hide"></td><td class="ts-mob-hide"></td><td class="ts-mob-hide"></td>
+          ${days.map(() => '<td></td>').join('')}
+          <td class="ts-col-total">${teamHours.toFixed(1)}</td>
+          <td class="ts-col-sum">${teamSum.toLocaleString('ru', {maximumFractionDigits:0})}</td>
+        </tr>`;
 
         // Разделитель между бригадами
         html += `<tr class="ts-divider" data-team-id="${tid}"><td colspan="${colSpan}"></td></tr>`;
