@@ -124,13 +124,58 @@ def restore_stuck_events() -> int:
 # ── п.5 Поиск сотрудника по name_from_photo ──────────────────────────────────
 
 FUZZY_THRESHOLD = 0.72   # минимальная схожесть для нечёткого совпадения
+TOKEN_THRESHOLD = 0.82   # минимальная схожесть при пофрагментном совпадении
+
+# Слова, которые бригадир пишет рядом с именем — тип события, предлоги
+_STRIP_TOKENS = frozenset({
+    "начало", "начал", "конец", "конес", "конц", "конца",
+    "окончание", "смены", "смена", "смену", "смене",
+    "приход", "уход", "ушел", "ушёл", "пришел", "пришёл",
+})
+
+
+def _clean_name(raw: str) -> str:
+    """Убирает слова типа события из подписи, оставляет только имя.
+    «Конец смены Андрей» → «андрей», «Мирали конес смены» → «мирали».
+    """
+    tokens = raw.lower().split()
+    clean = [t.strip(".,!-") for t in tokens if t.strip(".,!-") not in _STRIP_TOKENS]
+    return " ".join(clean)
+
+
+def _norm_cyr(s: str) -> str:
+    """Нормализует часто путаемые кириллические символы (ь/ъ, ё/е)."""
+    return s.replace("ь", "ъ").replace("ё", "е")
+
+
+def _prefix_sim(a: str, b: str, min_prefix: int = 3) -> float:
+    """Схожесть двух слов с учётом никнеймов («Тоха» ≈ «Тохир»).
+    Возвращает 1.0 при точном совпадении, 0.9 при совпадении префикса
+    (≥ min_prefix символов, длины слов отличаются не более чем на 2),
+    иначе — стандартный difflib ratio.
+    """
+    if a == b:
+        return 1.0
+    pfx = 0
+    for c1, c2 in zip(a, b):
+        if c1 == c2:
+            pfx += 1
+        else:
+            break
+    if pfx >= min_prefix and pfx >= min(len(a), len(b)) - 1 and abs(len(a) - len(b)) <= 2:
+        return 0.9
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
 
 def find_employee_by_name(name: str) -> dict | None:
     """
-    Ищет активного сотрудника по имени из OCR.
-    Шаг 1: точное совпадение (ilike, без учёта регистра).
-    Шаг 2: нечёткое совпадение по всему списку (difflib).
-    OCR часто даёт опечатки или лишние символы — fuzzy это покрывает.
+    Ищет активного сотрудника по имени из подписи бригадира.
+    Шаги (от точного к нечёткому):
+      1. Точный ilike.
+      1.5. Подстрока: «Саша» → «Саша (РР от Ярика)».
+      1.6. Подстрока по очищенному имени: «Конец смены Андрей» → «андрей».
+      1.7. Пофрагментное совпадение с никнеймами и нормализацией ь/ъ.
+      2. Полный fuzzy по очищенному нормализованному имени.
     """
     if not name:
         return None
@@ -146,7 +191,7 @@ def find_employee_by_name(name: str) -> dict | None:
     if isinstance(rows, list) and rows:
         return rows[0]
 
-    # Шаг 2 — загружаем всех активных и ищем нечётко
+    # Загружаем всех активных сотрудников один раз
     all_employees = sb_get(
         "/rest/v1/employees",
         "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url",
@@ -154,27 +199,47 @@ def find_employee_by_name(name: str) -> dict | None:
     if not isinstance(all_employees, list) or not all_employees:
         return None
 
+    name_lower    = name_clean.lower()
+    name_for_match = _clean_name(name_clean)   # без слов типа события
+
+    # Шаг 1.5/1.6 — однозначная подстрока (оригинал, затем очищенное имя)
+    for candidate in dict.fromkeys([name_lower, name_for_match]):  # уникальные, по порядку
+        if not candidate:
+            continue
+        hits = [e for e in all_employees if candidate in e["display_name"].lower()]
+        if len(hits) == 1:
+            return hits[0]
+
+    # Шаг 1.7 — пофрагментное совпадение: каждый токен имени vs каждый токен display_name.
+    # Обрабатывает никнеймы («Тоха»→«Тохир») и опечатки («Неьматулло»→«Неъматулло»).
+    search_tokens = (name_for_match or name_lower).split()
+    best_token_emp   = None
+    best_token_score = 0.0
+    for emp in all_employees:
+        emp_tokens = emp["display_name"].lower().split()
+        for nt in search_tokens:
+            nt_norm = _norm_cyr(nt)
+            for dt in emp_tokens:
+                score = _prefix_sim(nt_norm, _norm_cyr(dt))
+                if score > best_token_score:
+                    best_token_score = score
+                    best_token_emp   = emp
+
+    if best_token_score >= TOKEN_THRESHOLD:
+        return best_token_emp
+
+    # Шаг 2 — полный fuzzy по очищенному + нормализованному имени
     best_emp   = None
     best_ratio = 0.0
-    name_lower = name_clean.lower()
+    compare_name = _norm_cyr(name_for_match or name_lower)
 
     for emp in all_employees:
         ratio = difflib.SequenceMatcher(
-            None, name_lower, emp["display_name"].lower()
+            None, compare_name, _norm_cyr(emp["display_name"].lower())
         ).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_emp   = emp
-
-    # Шаг 1.5 — однозначная подстрока: "Саша" → "Саша (РР от Ярика)"
-    # Помогает когда рабочий пишет только имя, а в базе полное имя с пояснением.
-    # Срабатывает только при ровно одном совпадении — иначе передаём в fuzzy.
-    contains_matches = [
-        emp for emp in all_employees
-        if name_lower in emp["display_name"].lower()
-    ]
-    if len(contains_matches) == 1:
-        return contains_matches[0]
 
     if best_ratio >= FUZZY_THRESHOLD:
         return best_emp
@@ -314,28 +379,32 @@ def needs_review(employee: dict | None, face_match: bool | None, fraud_flags: li
         return True
     return False
 
-# ── п.8 event_type из event_type_raw ─────────────────────────────────────────
+# ── п.8 event_type из event_type_raw / name_from_photo ───────────────────────
 
-ARRIVAL_KEYWORDS   = ("начало", "приход", "пришел", "пришёл")
-DEPARTURE_KEYWORDS = ("конец", "окончание", "уход", "ушел", "ушёл")
+ARRIVAL_KEYWORDS   = ("начало", "начал", "приход", "пришел", "пришёл")
+DEPARTURE_KEYWORDS = ("конец", "конес", "конц", "конца", "окончание", "уход", "ушел", "ушёл")
 
 def resolve_event_type(event: dict) -> str | None:
     """
     Берёт тип события из уже распознанного event_type.
-    Если он пустой — пробует разобрать event_type_raw.
+    Если он пустой — пробует разобрать event_type_raw, затем name_from_photo.
     Время суток НЕ используется — только текст подписи.
+    Включает опечатки: «конес», «конц» и т.п.
     """
     # Бот уже поставил event_type через OCR — доверяем ему
     et = event.get("event_type")
     if et in ("arrival", "departure"):
         return et
 
-    # Запасной вариант: парсим raw-текст
-    raw = (event.get("event_type_raw") or "").lower()
-    if any(k in raw for k in ARRIVAL_KEYWORDS):
-        return "arrival"
-    if any(k in raw for k in DEPARTURE_KEYWORDS):
-        return "departure"
+    # Запасной вариант: парсим event_type_raw, затем name_from_photo
+    for source in (event.get("event_type_raw"), event.get("name_from_photo")):
+        text = (source or "").lower()
+        if not text:
+            continue
+        if any(k in text for k in ARRIVAL_KEYWORDS):
+            return "arrival"
+        if any(k in text for k in DEPARTURE_KEYWORDS):
+            return "departure"
 
     return None   # тип не определён → needs_review
 
