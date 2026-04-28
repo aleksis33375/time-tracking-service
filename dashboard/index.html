@@ -221,7 +221,7 @@
     .modal-footer { padding: 0 20px 20px; display: flex; gap: 8px; justify-content: flex-end; }
 
     /* ─── Timesheet table ───────────────────────────────────────────────── */
-    .ts-wrap { overflow-x: auto; }
+    .ts-wrap { overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 210px); }
     .ts-table {
       border-collapse: collapse; background: var(--surface);
       font-size: 12px; white-space: nowrap; width: 100%;
