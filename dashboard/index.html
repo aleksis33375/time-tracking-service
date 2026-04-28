@@ -3139,7 +3139,7 @@
     function buildExcelSheet(employees, eMap, days, prevMap) {
       const pad2  = n => String(n).padStart(2, '0');
       const dayHdrs = days.map(dk => `${parseInt(dk.slice(8))}.${pad2(parseInt(dk.slice(5,7)))}`);
-      const hdr = ['ФИО','Роль','Бригада','Ставка/д','Ставка/ч','Перех.ч',
+      const hdr = ['ФИО','Роль','Ставка/д','Ставка/ч','Перех.ч',
                    ...dayHdrs, 'Итого ч', 'Сумма ₽'];
       const aoa = [hdr];
 
@@ -3150,6 +3150,7 @@
         teams[t].push(emp);
       }
 
+      let teamIdx = 0;
       for (const [team, members] of Object.entries(teams)) {
         let tHours = 0, tSum = 0;
         for (const emp of members) {
@@ -3168,7 +3169,7 @@
           const sum   = Math.round(totalHours * hourlyRate);
           tHours += totalHours; tSum += sum;
           aoa.push([
-            emp.display_name, emp.position || '', team,
+            emp.display_name, emp.position || '',
             emp.daily_rate    ? parseFloat(emp.daily_rate)         : '',
             hourlyRate        ? parseFloat(hourlyRate.toFixed(2))  : '',
             prevH,
@@ -3177,20 +3178,25 @@
             sum || ''
           ]);
         }
-        // Подитог бригады
-        aoa.push([
-          team, `${members.length} чел.`, '', '', '', '',
-          ...days.map(() => ''),
-          parseFloat(tHours.toFixed(1)), Math.round(tSum)
-        ]);
-        aoa.push([]); // разделитель
+        if (teamIdx === 0) {
+          // Руководство: подитог не пишем, только пустую строку-разделитель
+          aoa.push([]);
+        } else {
+          // Итог бригады: пусто во всех колонках, только в последней — сумма
+          aoa.push([
+            '', '', '', '', '',
+            ...days.map(() => ''),
+            '', Math.round(tSum)
+          ]);
+        }
+        teamIdx++;
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
 
       // Ширины столбцов
       ws['!cols'] = [
-        {wch:26},{wch:16},{wch:14},{wch:10},{wch:10},{wch:9},
+        {wch:26},{wch:16},{wch:10},{wch:10},{wch:9},
         ...days.map(() => ({wch:6})),
         {wch:10},{wch:13}
       ];
