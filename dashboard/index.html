@@ -235,7 +235,7 @@
       position: sticky; top: 0; z-index: 1;
     }
     .ts-table tbody td {
-      padding: 7px 5px; border-bottom: 1px solid #F3F4F6;
+      padding: 3px 5px; border-bottom: 1px solid #F3F4F6;
       border-right: 1px solid #F3F4F6; text-align: center; vertical-align: middle;
     }
     .ts-table tbody tr:last-child td { border-bottom: none; }
@@ -257,15 +257,22 @@
     .ts-col-total, .ts-col-sum {
       min-width: 68px; font-weight: 700; background: #F9FAFB !important;
     }
-    .ts-subtotal td {
-      background: #F0FDF4 !important; font-weight: 600;
-      color: var(--success); border-bottom: 2px solid #BBF7D0 !important;
-    }
-    .ts-subtotal .ts-col-name,
-    .ts-subtotal .ts-col-role { background: #F0FDF4 !important; }
     .ts-divider td {
       height: 6px; background: var(--bg) !important;
       border: none !important; padding: 0 !important;
+    }
+    .ts-mgmt-sep td {
+      height: 18px; background: var(--surface) !important;
+      border: none !important; padding: 0 !important;
+    }
+    .ts-team-sum td {
+      background: var(--surface);
+      border-top: 1px solid #F3F4F6;
+      border-bottom: 1px solid #F3F4F6;
+    }
+    .ts-team-sum .ts-col-sum.ts-team-sum-cell {
+      background: #BBF7D0 !important;
+      color: #14532D; font-weight: 700;
     }
 
     /* ─── Timesheet photo tooltip ────────────────────────────────────────── */
@@ -296,10 +303,6 @@
     .ts-pt-btn:last-child { border-right: none; }
     .ts-pt-btn:hover { background: #F3F4F6; color: var(--text); }
     .ts-pt-btn.ts-pt-active { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
-    .ts-team-header { cursor: pointer; user-select: none; }
-    .ts-team-header:hover td { background: #E6FFF2 !important; }
-    .ts-arrow { display: inline-block; font-size: 10px; margin-right: 5px; transition: transform .15s; width: 10px; }
-    .ts-arrow.collapsed { transform: rotate(-90deg); }
 
     /* ─── Print styles ──────────────────────────────────────────────────── */
     #ts-print-header { display: none; margin-bottom: 14px; }
@@ -332,7 +335,7 @@
       thead { display: table-header-group; }
       tbody tr { page-break-inside: avoid; }
       .ts-divider { page-break-after: always; break-after: page; }
-      .ts-subtotal { page-break-inside: avoid; break-inside: avoid; }
+      .ts-team-sum { page-break-inside: avoid; break-inside: avoid; }
     }
 
     /* ─── Responsive ─────────────────────────────────────────────────────── */
@@ -503,8 +506,6 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input class="input" id="ts-search" style="width:210px;"
             placeholder="Поиск по ФИО..." oninput="tsSearchFilter()">
-          <button class="btn btn-outline btn-sm" onclick="tsToggleAll()" id="ts-toggle-all-btn"
-            title="Свернуть / развернуть все бригады">Свернуть все</button>
           <button class="btn btn-outline btn-sm" id="ts-excel-btn" onclick="downloadExcel()"
             title="Скачать Excel (листы по неделям)">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -2735,7 +2736,6 @@
     }
 
     /* ─── Timesheet search & collapse ───────────────────────────────────── */
-    const tsCollapsed = new Set();
     let   tsSearchQ   = '';
 
     function tsSearchFilter() {
@@ -2743,56 +2743,20 @@
       applyTsVisibility();
     }
 
-    function tsToggleTeam(tid) {
-      if (tsCollapsed.has(tid)) tsCollapsed.delete(tid);
-      else                       tsCollapsed.add(tid);
-      applyTsVisibility();
-    }
-
-    function tsToggleAll() {
-      // Определяем все teamId в таблице
-      const teamIds = [...new Set(
-        [...document.querySelectorAll('#ts-tbody tr[data-team-id][data-emp-name]')]
-          .map(r => Number(r.dataset.teamId))
-      )];
-      const allCollapsed = teamIds.every(id => tsCollapsed.has(id));
-      if (allCollapsed) {
-        teamIds.forEach(id => tsCollapsed.delete(id));
-        document.getElementById('ts-toggle-all-btn').textContent = 'Свернуть все';
-      } else {
-        teamIds.forEach(id => tsCollapsed.add(id));
-        document.getElementById('ts-toggle-all-btn').textContent = 'Развернуть все';
-      }
-      applyTsVisibility();
-    }
-
     function applyTsVisibility() {
       const q = tsSearchQ;
-      // Какие бригады имеют хоть одного совпадающего сотрудника
       const teamVisible = {};
 
       for (const row of document.querySelectorAll('#ts-tbody tr[data-emp-name]')) {
-        const tid      = Number(row.dataset.teamId);
-        const empName  = row.dataset.empName || '';
-        const matches  = !q || empName.includes(q);
-        const hidden   = !matches || tsCollapsed.has(tid);
-        row.style.display = hidden ? 'none' : '';
+        const tid     = Number(row.dataset.teamId);
+        const empName = row.dataset.empName || '';
+        const matches = !q || empName.includes(q);
+        row.style.display = matches ? '' : 'none';
         if (matches) teamVisible[tid] = true;
       }
 
-      for (const row of document.querySelectorAll('#ts-tbody tr.ts-team-header')) {
-        const tid = Number(row.dataset.teamId);
-        // Скрываем подитог только если нет совпадений при поиске
-        row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
-        // Обновляем стрелку
-        const arrow = document.getElementById(`ts-arrow-${tid}`);
-        if (arrow) {
-          if (tsCollapsed.has(tid)) arrow.classList.add('collapsed');
-          else                       arrow.classList.remove('collapsed');
-        }
-      }
-
-      for (const row of document.querySelectorAll('#ts-tbody tr.ts-divider')) {
+      // Прячем итоговую строку бригады, если в ней нет совпадений по поиску
+      for (const row of document.querySelectorAll('#ts-tbody tr.ts-team-sum')) {
         const tid = Number(row.dataset.teamId);
         row.style.display = (q && !teamVisible[tid]) ? 'none' : '';
       }
@@ -2934,8 +2898,7 @@
       document.getElementById('ts-loading').style.display         = 'flex';
       document.getElementById('ts-table-container').style.display = 'none';
       document.getElementById('ts-empty').style.display           = 'none';
-      // Сброс поиска и сворачивания при смене периода
-      tsCollapsed.clear();
+      // Сброс поиска при смене периода
       tsSearchQ = '';
       const srch = document.getElementById('ts-search');
       if (srch) srch.value = '';
@@ -3110,10 +3073,10 @@
             : `<span style="color:#D1D5DB;">0</span>`;
 
           html += `<tr data-team-id="${tid}" data-emp-name="${escHtml(emp.display_name.toLowerCase())}">
-            <td class="ts-col-name" style="padding:8px 8px;">
+            <td class="ts-col-name" style="padding:3px 8px;">
               <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
             </td>
-            <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:8px 6px;">${escHtml(emp.position || '—')}</td>
+            <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:3px 6px;">${escHtml(emp.position || '—')}</td>
             <td class="ts-mob-hide">${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
             <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
             <td class="ts-mob-hide">${prevCell}</td>
@@ -3123,20 +3086,21 @@
           </tr>`;
         }
 
-        // Подитог бригады (кликабельный — сворачивание)
-        html += `<tr class="ts-subtotal ts-team-header" data-team-id="${tid}" onclick="tsToggleTeam(${tid})">
-          <td class="ts-col-name" style="padding:8px 8px;">
-            <span class="ts-arrow" id="ts-arrow-${tid}">▼</span>${escHtml(team)}<span class="ts-mob-only" style="color:var(--muted);font-size:11px;margin-left:4px;">(${members.length} чел.)</span>
-          </td>
-          <td class="ts-col-role ts-mob-hide">${members.length} чел.</td>
-          <td class="ts-mob-hide"></td><td class="ts-mob-hide"></td><td class="ts-mob-hide"></td>
-          ${days.map(() => '<td></td>').join('')}
-          <td class="ts-col-total">${teamHours.toFixed(1)}</td>
-          <td class="ts-col-sum">${teamSum.toLocaleString('ru', {maximumFractionDigits:0})}</td>
-        </tr>`;
-
-        // Разделитель между бригадами
-        html += `<tr class="ts-divider" data-team-id="${tid}"><td colspan="${colSpan}"></td></tr>`;
+        // Итог бригады в стиле Excel: пустая белая строка, ТОЛЬКО ячейка СУММА ₽ зелёная.
+        // Первая бригада в данных — руководство (Кирьян/Кирьян/Краснов): для неё вместо
+        // зелёной СУММА-ячейки рисуем просто пустой разделитель.
+        if (tid === 0) {
+          html += `<tr class="ts-mgmt-sep"><td colspan="${colSpan}"></td></tr>`;
+        } else {
+          html += `<tr class="ts-team-sum" data-team-id="${tid}">
+            <td class="ts-col-name"></td>
+            <td class="ts-col-role ts-mob-hide"></td>
+            <td class="ts-mob-hide"></td><td class="ts-mob-hide"></td><td class="ts-mob-hide"></td>
+            ${days.map(() => '<td></td>').join('')}
+            <td class="ts-col-total"></td>
+            <td class="ts-col-sum ts-team-sum-cell">${teamSum ? teamSum.toLocaleString('ru', {maximumFractionDigits:0}) : '—'}</td>
+          </tr>`;
+        }
       }
 
       document.getElementById('ts-tbody').innerHTML = html;
