@@ -5,6 +5,7 @@
 
 import sharp from 'sharp';
 import exifReader from 'exif-reader';
+import Tesseract from 'tesseract.js';
 import { waitUntil } from '@vercel/functions';
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -79,15 +80,28 @@ async function handlePhoto(msg) {
   // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
   let compressedBuffer = null;
   let photoUrl         = null;
-  let exifTimestamp    = null;
+  let stampTimestamp   = null;  // из EXIF или OCR
+  let timeSource       = 'telegram';
 
   try {
     const originalBuffer = await downloadTelegramPhoto(largest.file_id);
-    exifTimestamp = await extractExifTimestamp(originalBuffer);
+
+    const exif = await extractExifTimestamp(originalBuffer);
+    if (exif) {
+      stampTimestamp = exif;
+      timeSource = 'exif';
+    } else {
+      const ocr = await extractOcrTimestamp(originalBuffer, msg.date);
+      if (ocr) {
+        stampTimestamp = ocr;
+        timeSource = 'ocr';
+      }
+    }
+
     compressedBuffer = await compressPhoto(originalBuffer);
     const originalKb   = Math.round(originalBuffer.length   / 1024);
     const compressedKb = Math.round(compressedBuffer.length / 1024);
-    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB, EXIF time: ${exifTimestamp || 'absent'}`);
+    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB, time_source: ${timeSource}, stamp: ${stampTimestamp || 'none'}`);
   } catch (err) {
     await logToSupabase('warn', 'webhook-handler', `Photo download failed: ${err.message}`, { chatId, messageId });
   }
@@ -100,7 +114,7 @@ async function handlePhoto(msg) {
     }
   }
 
-  const photoTimestamp = exifTimestamp || telegramTimestamp;
+  const photoTimestamp = stampTimestamp || telegramTimestamp;
 
   // Запись в events — всегда, даже без фото
   await insertEvent({
@@ -116,7 +130,7 @@ async function handlePhoto(msg) {
     name:        caption.nameFromPhoto,
     event:       caption.eventTypeRaw,
     photo:       photoUrl ? 'ok' : 'missing',
-    time_source: exifTimestamp ? 'exif' : 'telegram',
+    time_source: timeSource,
     photo_time:  photoTimestamp,
   });
 }
@@ -238,6 +252,59 @@ async function extractExifTimestamp(buffer) {
     return new Date(utcMs).toISOString();
   } catch (err) {
     console.warn('EXIF parse failed:', err.message);
+    return null;
+  }
+}
+
+async function extractOcrTimestamp(buffer, msgDateUnix) {
+  try {
+    const meta = await sharp(buffer).metadata();
+    if (!meta.width || !meta.height) return null;
+
+    // Кроп нижних 28% — там находится штамп времени
+    const cropTop    = Math.floor(meta.height * 0.72);
+    const croppedBuf = await sharp(buffer)
+      .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
+      .greyscale()
+      .normalise()
+      .toBuffer();
+
+    // OCR с жёстким таймаутом 6 сек; whitelist только цифры и двоеточия
+    const ocrResult = await Promise.race([
+      Tesseract.recognize(croppedBuf, 'eng', {
+        tessedit_char_whitelist: '0123456789:.',
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('OCR timeout')), 6000)
+      ),
+    ]);
+
+    const text = ocrResult.data.text;
+    console.log('OCR raw:', text.trim());
+
+    // Ищем паттерн HH:MM:SS
+    const timeMatch = text.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!timeMatch) {
+      console.log('OCR: time pattern not found');
+      return null;
+    }
+    const [, h, m, s] = timeMatch;
+
+    // Дата из msg.date, переведённого в московский день (UTC+3)
+    const msgMoscow = new Date(msgDateUnix * 1000 + 3 * 3600 * 1000);
+    const year  = msgMoscow.getUTCFullYear();
+    const month = msgMoscow.getUTCMonth();
+    const day   = msgMoscow.getUTCDate();
+
+    // Строим московский datetime и конвертируем в UTC
+    const moscowMs = Date.UTC(year, month, day, parseInt(h), parseInt(m), parseInt(s));
+    const utcMs    = moscowMs - 3 * 3600 * 1000;
+    const result   = new Date(utcMs).toISOString();
+
+    console.log('OCR timestamp:', result);
+    return result;
+  } catch (err) {
+    console.warn('OCR failed:', err.message);
     return null;
   }
 }
