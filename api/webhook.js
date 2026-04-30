@@ -4,6 +4,7 @@
  */
 
 import sharp from 'sharp';
+import exifReader from 'exif-reader';
 import { waitUntil } from '@vercel/functions';
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -72,19 +73,21 @@ async function handlePhoto(msg) {
   const caption = parseCaptionText(msg.caption || '');
   console.log('Caption (from msg.caption):', caption);
 
-  // Резервный timestamp: время отправки из Telegram
-  const fallbackTimestamp = new Date(msg.date * 1000).toISOString();
+  // Резервный timestamp: время отправки из Telegram (используется, если EXIF нет)
+  const telegramTimestamp = new Date(msg.date * 1000).toISOString();
 
   // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
   let compressedBuffer = null;
-  let photoUrl = null;
+  let photoUrl         = null;
+  let exifTimestamp    = null;
 
   try {
     const originalBuffer = await downloadTelegramPhoto(largest.file_id);
+    exifTimestamp = await extractExifTimestamp(originalBuffer);
     compressedBuffer = await compressPhoto(originalBuffer);
     const originalKb   = Math.round(originalBuffer.length   / 1024);
     const compressedKb = Math.round(compressedBuffer.length / 1024);
-    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB`);
+    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB, EXIF time: ${exifTimestamp || 'absent'}`);
   } catch (err) {
     await logToSupabase('warn', 'webhook-handler', `Photo download failed: ${err.message}`, { chatId, messageId });
   }
@@ -97,7 +100,7 @@ async function handlePhoto(msg) {
     }
   }
 
-  const photoTimestamp = fallbackTimestamp;
+  const photoTimestamp = exifTimestamp || telegramTimestamp;
 
   // Запись в events — всегда, даже без фото
   await insertEvent({
@@ -110,9 +113,11 @@ async function handlePhoto(msg) {
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
-    name:  caption.nameFromPhoto,
-    event: caption.eventTypeRaw,
-    photo: photoUrl ? 'ok' : 'missing',
+    name:        caption.nameFromPhoto,
+    event:       caption.eventTypeRaw,
+    photo:       photoUrl ? 'ok' : 'missing',
+    time_source: exifTimestamp ? 'exif' : 'telegram',
+    photo_time:  photoTimestamp,
   });
 }
 
@@ -211,6 +216,30 @@ async function downloadTelegramPhoto(fileId) {
 
   const arrayBuf = await fileRes.arrayBuffer();
   return Buffer.from(arrayBuf);
+}
+
+async function extractExifTimestamp(buffer) {
+  try {
+    const meta = await sharp(buffer).metadata();
+    if (!meta.exif) {
+      console.log('EXIF: absent (photo sent as image, not file)');
+      return null;
+    }
+    const parsed = exifReader(meta.exif);
+    // exif-reader v2: DateTimeOriginal лежит в parsed.Photo или parsed.exif
+    const dt = parsed?.Photo?.DateTimeOriginal || parsed?.exif?.DateTimeOriginal;
+    if (!(dt instanceof Date) || isNaN(dt.getTime())) {
+      console.log('EXIF: present but DateTimeOriginal invalid or missing');
+      return null;
+    }
+    // exif-reader читает время как UTC, но EXIF хранит местное время (МСК, UTC+3).
+    // Вычитаем 3 часа чтобы получить настоящий UTC.
+    const utcMs = dt.getTime() - 3 * 60 * 60 * 1000;
+    return new Date(utcMs).toISOString();
+  } catch (err) {
+    console.warn('EXIF parse failed:', err.message);
+    return null;
+  }
 }
 
 async function compressPhoto(buffer) {

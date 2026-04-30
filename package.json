@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@vercel/functions": "^1.4.0",
+    "exif-reader": "^2.0.0",
     "sharp": "0.33.4"
   }
 }
