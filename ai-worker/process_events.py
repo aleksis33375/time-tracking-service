@@ -78,6 +78,11 @@ def log(level: str, message: str, meta: dict | None = None) -> None:
     print(f"[{level.upper()}] {message}", flush=True)
 
 
+def _ts_for_url(dt: datetime) -> str:
+    """ISO timestamp safe for URL query strings (Z for UTC, %2B for others)."""
+    return dt.isoformat().replace("+00:00", "Z").replace("+", "%2B")
+
+
 # ── п.3 Атомарный захват записей ──────────────────────────────────────────────
 
 def claim_pending_events() -> list[dict]:
@@ -111,7 +116,7 @@ def claim_pending_events() -> list[dict]:
 
 def restore_stuck_events() -> int:
     """Возвращает в pending записи, зависшие в processing дольше STUCK_AFTER минут."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=STUCK_AFTER)).isoformat()
+    cutoff = _ts_for_url(datetime.now(timezone.utc) - timedelta(minutes=STUCK_AFTER))
     res = sb_patch(
         f"/rest/v1/events?status=eq.processing&processing_started_at=lt.{cutoff}",
         {"status": "pending", "processing_started_at": None},
@@ -418,72 +423,41 @@ def moscow_date_of(utc_iso: str) -> str:
     return (dt + MOSCOW_OFFSET).strftime("%Y-%m-%d")
 
 
-def calculate_hours(employee_id: str, current_event: dict) -> float | None:
+def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None, str | None]:
     """
-    Часы за день = последний «конец смены» − первый «начало смены».
-    Обед НЕ вычитается. Результат дробный (9.5 = 9ч 30м).
-    Выходные обрабатываются как будние (п.11 — никакого спецкода не нужно).
-    Возвращает None если приход или уход отсутствует (неполный день).
+    Для departure: ищет ближайший arrival за 18ч до него.
+    Возвращает (hours, paired_arrival_id) или (None, None).
     """
+    if current_event.get("event_type") != "departure":
+        return (None, None)
+
     ts_str = current_event.get("photo_timestamp")
     if not ts_str or not employee_id:
-        return None
-
-    moscow_day = moscow_date_of(ts_str)
-
-    # Границы календарного дня в UTC
-    day_start = (
-        datetime.strptime(moscow_day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        - MOSCOW_OFFSET
-    )
-    day_end = day_start + timedelta(days=1)
-
-    # Все события сотрудника за этот день (включая текущее — оно уже processing)
-    # needs_review тоже включаем: arrival мог уйти в needs_review (неполный день утром),
-    # а вечерний departure должен его найти и посчитать часы
-    rows = sb_get(
-        "/rest/v1/events",
-        f"?employee_id=eq.{employee_id}"
-        f"&photo_timestamp=gte.{day_start.isoformat()}"
-        f"&photo_timestamp=lt.{day_end.isoformat()}"
-        f"&status=in.(done,processing,needs_review)"
-        f"&select=id,event_type,photo_timestamp"
-        f"&order=photo_timestamp.asc",
-    )
-    if not isinstance(rows, list) or not rows:
-        return None
-
-    arrivals   = [r for r in rows if r.get("event_type") == "arrival"]
-    departures = [r for r in rows if r.get("event_type") == "departure"]
-
-    if not arrivals or not departures:
-        return None   # неполный день → п.10 обработает это как needs_review
+        return (None, None)
 
     def parse_ts(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
-    first_arrival  = parse_ts(arrivals[0]["photo_timestamp"])
-    last_departure = parse_ts(departures[-1]["photo_timestamp"])
+    dep_ts = parse_ts(ts_str)
+    window_start = dep_ts - timedelta(hours=18)
 
-    if last_departure <= first_arrival:
-        return None   # уход раньше прихода — аномалия
+    rows = sb_get(
+        "/rest/v1/events",
+        f"?employee_id=eq.{employee_id}"
+        f"&event_type=eq.arrival"
+        f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
+        f"&photo_timestamp=lt.{_ts_for_url(dep_ts)}"
+        f"&status=in.(done,processing,needs_review)"
+        f"&select=id,photo_timestamp"
+        f"&order=photo_timestamp.desc&limit=1",
+    )
+    if not isinstance(rows, list) or not rows:
+        return (None, None)
 
-    hours = (last_departure - first_arrival).total_seconds() / 3600
-
-    # Закрываем arrival-события которые были в needs_review (неполный день утром)
-    # теперь пара arrival+departure есть — переводим их в done
-    arrival_ids_to_close = [
-        r["id"] for r in arrivals
-        if r.get("id") and r.get("event_type") == "arrival"
-    ]
-    if arrival_ids_to_close:
-        id_filter = "(" + ",".join(arrival_ids_to_close) + ")"
-        sb_patch(
-            f"/rest/v1/events?id=in.{id_filter}&status=eq.needs_review",
-            {"status": "done", "hours": round(hours, 2)},
-        )
-
-    return round(hours, 2)
+    arr = rows[0]
+    arr_ts = parse_ts(arr["photo_timestamp"])
+    hours = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
+    return (hours, arr["id"])
 
 
 # ── п.10 Неполный день + п.11 Выходные ───────────────────────────────────────
@@ -631,8 +605,9 @@ def main() -> None:
 
         # п.9 Расчёт часов (только если сотрудник найден и тип определён)
         hours = None
+        paired_arrival_id = None
         if employee and event_type and not go_review:
-            hours = calculate_hours(employee["id"], event)
+            hours, paired_arrival_id = calculate_hours(employee["id"], event)
         print(f"     hours: {hours}", flush=True)
 
         # п.10 Неполный день → needs_review (п.11: выходные = будние, спецкода нет)
@@ -643,6 +618,13 @@ def main() -> None:
         # п.12/13 Финализация события
         finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
         print(f"     → {'needs_review' if go_review else 'done'}", flush=True)
+
+        # Закрываем парный arrival точечно
+        if paired_arrival_id and not go_review:
+            sb_patch(
+                f"/rest/v1/events?id=eq.{paired_arrival_id}",
+                {"status": "done", "hours": hours},
+            )
 
         # п.14 Уведомление руководителю если needs_review
         if go_review:
