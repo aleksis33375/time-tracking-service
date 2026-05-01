@@ -1353,7 +1353,7 @@
       const [employees, todayEvents, reviewAll] = await Promise.all([
         guardedFetch('/rest/v1/employees?select=id,display_name,team,position&deleted_at=is.null&order=display_name.asc'),
         guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status,fraud_flags,name_from_photo&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
-        guardedFetch('/rest/v1/events?select=id&status=eq.needs_review'),
+        guardedFetch(`/rest/v1/events?select=id&status=eq.needs_review&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}`),
       ]);
 
       const empArr     = employees  || [];
@@ -2043,7 +2043,7 @@
       const [events, emps, anomalies] = await Promise.all([
         guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.done&order=photo_timestamp.asc&limit=5000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team,daily_rate,hourly_rate&deleted_at=is.null'),
-        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,fraud_flags,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.needs_review&order=photo_timestamp.desc&limit=200`),
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,fraud_flags,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.needs_review&order=photo_timestamp.desc&limit=1000`),
       ]);
 
       document.getElementById('an-loading').style.display = 'none';
