@@ -716,6 +716,7 @@
           <option value="face_mismatch">face_mismatch</option>
           <option value="wrong_location">wrong_location</option>
           <option value="incomplete_day">incomplete_day</option>
+          <option value="double_shift">double_shift</option>
         </select>
         <span id="rv-count-label" style="align-self:center;font-size:13px;color:var(--muted);"></span>
       </div>
@@ -729,6 +730,7 @@
           <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Всё проверено</div>
           <div style="color:var(--muted);font-size:13px;">Записей, требующих проверки, нет</div>
         </div>
+        <div id="rv-ds-cards" style="display:none;padding:12px 16px 0;"></div>
         <div id="rv-table-wrap" style="display:none;overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead>
@@ -1659,6 +1661,12 @@
       renderReview();
     }
 
+    // Shared date helper (UTC ISO → Moscow YYYY-MM-DD)
+    function rvMskDate(iso) {
+      const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    }
+
     function renderReview() {
       const filterFraud = document.getElementById('rv-filter-fraud').value;
 
@@ -1671,13 +1679,20 @@
 
       document.getElementById('rv-count-label').textContent = `${rows.length} записей`;
 
+      // Разделяем double_shift и обычные события
+      const dsRows      = rows.filter(ev => parseFraudFlags(ev.fraud_flags).includes('double_shift'));
+      const regularRows = rows.filter(ev => !parseFraudFlags(ev.fraud_flags).includes('double_shift'));
+
+      const hasDs      = dsRows.length > 0;
+      const hasRegular = regularRows.length > 0;
+
       if (!rows.length) {
         document.getElementById('rv-empty').style.display      = '';
+        document.getElementById('rv-ds-cards').style.display   = 'none';
         document.getElementById('rv-table-wrap').style.display = 'none';
         return;
       }
-      document.getElementById('rv-empty').style.display      = 'none';
-      document.getElementById('rv-table-wrap').style.display = '';
+      document.getElementById('rv-empty').style.display = 'none';
 
       // Карта сотрудников
       const empMap = {};
@@ -1690,12 +1705,76 @@
         const time = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
         return `${date} ${time}`;
       };
+      const fmtTime = iso => {
+        if (!iso) return '—';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+      };
 
-      const FRAUD_COLOR = { face_mismatch: '#DC2626', wrong_location: '#D97706', incomplete_day: '#7C3AED' };
+      // ── Карточки двойных смен ──────────────────────────────────────────────
+      const dsCardsEl = document.getElementById('rv-ds-cards');
+      if (hasDs) {
+        // Группируем по (employee_id, date)
+        const groups = {};
+        for (const ev of dsRows) {
+          const dk  = rvMskDate(ev.photo_timestamp);
+          const key = `${ev.employee_id}|${dk}`;
+          if (!groups[key]) groups[key] = { empId: ev.employee_id, dk, evs: [] };
+          groups[key].evs.push(ev);
+        }
+
+        let cardsHtml = '';
+        for (const { empId, dk, evs } of Object.values(groups)) {
+          const emp      = empMap[empId] || {};
+          const empName  = escHtml(emp.display_name || '—');
+          const dateDisp = dk.split('-').reverse().join('.');
+          const arrivals  = evs.filter(e => e.event_type === 'arrival') .sort((a,b) => new Date(a.photo_timestamp)-new Date(b.photo_timestamp));
+          const departures= evs.filter(e => e.event_type === 'departure').sort((a,b) => new Date(a.photo_timestamp)-new Date(b.photo_timestamp));
+
+          const renderShift = (arr, dep, idx) => {
+            const timeA = arr ? fmtTime(arr.photo_timestamp) : '—';
+            const timeD = dep ? fmtTime(dep.photo_timestamp) : '—';
+            const h     = dep && dep.hours != null ? dep.hours + ' ч' : '—';
+            return `<div style="font-size:13px;margin-bottom:3px;"><b>Смена ${idx}</b>: ${timeA} → ${timeD} = <b>${h}</b></div>`;
+          };
+          const shift1 = renderShift(arrivals[0], departures[0], 1);
+          const shift2 = renderShift(arrivals[1], departures[1], 2);
+          const h1 = departures[0] && departures[0].hours != null ? departures[0].hours : 0;
+          const h2 = departures[1] && departures[1].hours != null ? departures[1].hours : 0;
+          const total  = (h1 + h2).toFixed(2);
+          const empJson = escHtml(JSON.stringify(empId));
+          const dkJson  = escHtml(JSON.stringify(dk));
+
+          cardsHtml += `
+          <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:8px;">
+              Двойная смена — ${empName} (${dateDisp})
+            </div>
+            ${shift1}${shift2}
+            <div style="font-size:13px;margin-bottom:12px;color:#DC2626;font-weight:600;">Итого: ${total} ч</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-sm" style="background:#16A34A;color:#fff;border:none;"
+                onclick="confirmDoubleShift(${empJson},${dkJson})">Подтвердить обе смены</button>
+              <button class="btn btn-outline btn-sm" style="color:#DC2626;border-color:#FECACA;"
+                onclick="rejectSecondShift(${empJson},${dkJson})">Отклонить вторую смену</button>
+            </div>
+          </div>`;
+        }
+        dsCardsEl.innerHTML    = cardsHtml;
+        dsCardsEl.style.display = '';
+      } else {
+        dsCardsEl.innerHTML    = '';
+        dsCardsEl.style.display = 'none';
+      }
+
+      // ── Обычная таблица ────────────────────────────────────────────────────
+      document.getElementById('rv-table-wrap').style.display = hasRegular ? '' : 'none';
+
+      const FRAUD_COLOR = { face_mismatch: '#DC2626', wrong_location: '#D97706', incomplete_day: '#7C3AED', double_shift: '#0891B2' };
       const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';
-      for (const ev of rows) {
+      for (const ev of regularRows) {
         const emp = ev.employee_id ? empMap[ev.employee_id] : null;
         const empName = emp ? emp.display_name : '—';
 
@@ -1726,6 +1805,42 @@
         </tr>`;
       }
       document.getElementById('rv-tbody').innerHTML = html;
+    }
+
+    async function confirmDoubleShift(empId, dateKey) {
+      const ids = rvRawRows
+        .filter(ev => ev.employee_id === empId && rvMskDate(ev.photo_timestamp) === dateKey
+                   && parseFraudFlags(ev.fraud_flags).includes('double_shift'))
+        .map(ev => ev.id);
+      for (const id of ids) {
+        await supabaseFetch(`/rest/v1/events?id=eq.${id}`, {
+          method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
+        });
+      }
+      loadReview();
+    }
+
+    async function rejectSecondShift(empId, dateKey) {
+      const evs = rvRawRows
+        .filter(ev => ev.employee_id === empId && rvMskDate(ev.photo_timestamp) === dateKey
+                   && parseFraudFlags(ev.fraud_flags).includes('double_shift'))
+        .sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
+      const arrivals   = evs.filter(e => e.event_type === 'arrival');
+      const departures = evs.filter(e => e.event_type === 'departure');
+      // Первая пара → done, вторая пара → rejected
+      const toApprove = [arrivals[0], departures[0]].filter(Boolean);
+      const toReject  = [arrivals[1], departures[1]].filter(Boolean);
+      for (const ev of toApprove) {
+        await supabaseFetch(`/rest/v1/events?id=eq.${ev.id}`, {
+          method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
+        });
+      }
+      for (const ev of toReject) {
+        await supabaseFetch(`/rest/v1/events?id=eq.${ev.id}`, {
+          method: 'PATCH', body: JSON.stringify({ status: 'rejected', fraud_flags: ['double_shift'] }),
+        });
+      }
+      loadReview();
     }
 
     function openReviewEdit(eventId) {
@@ -2975,7 +3090,7 @@
           '&deleted_at=is.null&order=team.asc,display_name.asc'
         ),
         guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,hours,status,fraud_flags,photo_url` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,hours,status,fraud_flags,photo_url,event_type` +
           `&photo_timestamp=gte.${startISO}&photo_timestamp=lt.${endISO}` +
           `&status=in.(done,needs_review)&limit=5000`
         ),
@@ -2999,24 +3114,33 @@
         return `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
       }
 
-      // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url }
+      // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url, double_shift, shift_hours }
       const eMap = {};
       for (const ev of events || []) {
         if (!ev.employee_id || !ev.photo_timestamp) continue;
         const dk    = toMskDate(ev.photo_timestamp);
         const empId = ev.employee_id;
         if (!eMap[empId]) eMap[empId] = {};
-        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null };
-        const cell = eMap[empId][dk];
-        // Предпочитаем событие с часами (обычно departure) — у него фото информативнее
-        if (ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
-          cell.hours     = ev.hours;
-          cell.photo_url = ev.photo_url || cell.photo_url;
-        } else if (!cell.photo_url && ev.photo_url) {
-          cell.photo_url = ev.photo_url;
+        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null, double_shift: false, shift_hours: [] };
+        const cell  = eMap[empId][dk];
+        const flags = parseFraudFlags(ev.fraud_flags);
+        // Двойная смена: собираем часы каждой пары по departure-событиям
+        if (flags.includes('double_shift')) {
+          cell.double_shift = true;
+          if (ev.event_type === 'departure' && ev.hours != null) {
+            cell.shift_hours.push(ev.hours);
+          }
+        } else {
+          // Обычный режим: предпочитаем событие с часами
+          if (ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
+            cell.hours     = ev.hours;
+            cell.photo_url = ev.photo_url || cell.photo_url;
+          } else if (!cell.photo_url && ev.photo_url) {
+            cell.photo_url = ev.photo_url;
+          }
         }
         if (ev.status === 'needs_review') cell.review = true;
-        if (ev.fraud_flags && ev.fraud_flags.length)  cell.fraud  = true;
+        if (flags.length)                 cell.fraud  = true;
       }
 
       // Переход часов: суммируем максимальные часы за каждый день предыдущего периода
@@ -3104,6 +3228,13 @@
 
             if (!cell) {
               return `<td class="ts-day" style="${wkndStyle}color:#D1D5DB;">—</td>`;
+            }
+            // Двойная смена: суммируем часы обеих пар, красный жирный + подсказка
+            if (cell.double_shift && cell.shift_hours.length) {
+              const dsTotal = Math.round(cell.shift_hours.reduce((a,b)=>a+b,0)*100)/100;
+              totalHours += dsTotal;
+              const tip = `title="Двойная смена: ${cell.shift_hours.map(h=>h+'ч').join(' + ')}"`;
+              return `<td class="ts-day" style="background:#FEF2F2;color:#DC2626;font-weight:700;" ${tip}${photoAttr}>${dsTotal} &#9888;</td>`;
             }
             if (cell.hours != null) {
               totalHours += cell.hours;

@@ -423,41 +423,85 @@ def moscow_date_of(utc_iso: str) -> str:
     return (dt + MOSCOW_OFFSET).strftime("%Y-%m-%d")
 
 
-def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None, str | None]:
+def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None, str | None, bool, bool]:
     """
-    Для departure: ищет ближайший arrival за 18ч до него.
-    Возвращает (hours, paired_arrival_id) или (None, None).
+    Для departure: buffer-state алгоритм детекции дублей и двойных смен.
+    Возвращает (hours, paired_arrival_id, is_double_shift, is_duplicate).
     """
     if current_event.get("event_type") != "departure":
-        return (None, None)
+        return (None, None, False, False)
 
     ts_str = current_event.get("photo_timestamp")
     if not ts_str or not employee_id:
-        return (None, None)
+        return (None, None, False, False)
 
     def parse_ts(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
     dep_ts = parse_ts(ts_str)
-    window_start = dep_ts - timedelta(hours=18)
+    window_start = dep_ts - timedelta(hours=24)
 
     rows = sb_get(
         "/rest/v1/events",
         f"?employee_id=eq.{employee_id}"
-        f"&event_type=eq.arrival"
         f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
         f"&photo_timestamp=lt.{_ts_for_url(dep_ts)}"
         f"&status=in.(done,processing,needs_review)"
-        f"&select=id,photo_timestamp"
-        f"&order=photo_timestamp.desc&limit=1",
+        f"&select=id,event_type,photo_timestamp"
+        f"&order=photo_timestamp.asc",
     )
-    if not isinstance(rows, list) or not rows:
-        return (None, None)
 
-    arr = rows[0]
-    arr_ts = parse_ts(arr["photo_timestamp"])
-    hours = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
-    return (hours, arr["id"])
+    if not isinstance(rows, list):
+        rows = []
+
+    open_arrival_id = None
+    closed_pairs    = 0
+
+    for ev in rows:
+        ev_type = ev.get("event_type")
+        if ev_type == "arrival":
+            open_arrival_id = ev["id"]        # последний необработанный arrival
+        elif ev_type == "departure":
+            if open_arrival_id is not None:
+                open_arrival_id = None
+                closed_pairs += 1
+
+    if open_arrival_id is None:
+        return (None, None, False, True)      # нет открытого arrival → дубль
+
+    arr_row = next((r for r in rows if r["id"] == open_arrival_id), None)
+    if arr_row is None:
+        return (None, None, False, False)
+
+    arr_ts = parse_ts(arr_row["photo_timestamp"])
+    hours  = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
+    return (hours, open_arrival_id, closed_pairs >= 1, False)
+
+
+def _flag_previous_pair_as_double(employee_id: str, dep_ts: datetime) -> None:
+    """
+    JSONB read-modify-write: добавляет 'double_shift' к fraud_flags всех 'done'
+    событий сотрудника за [dep_ts-24h, dep_ts) и переводит их в needs_review.
+    """
+    window_start = dep_ts - timedelta(hours=24)
+    rows = sb_get(
+        "/rest/v1/events",
+        f"?employee_id=eq.{employee_id}"
+        f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
+        f"&photo_timestamp=lt.{_ts_for_url(dep_ts)}"
+        f"&status=eq.done"
+        f"&select=id,fraud_flags",
+    )
+    if not isinstance(rows, list):
+        return
+    for ev in rows:
+        flags = list(ev.get("fraud_flags") or [])
+        if "double_shift" not in flags:
+            flags.append("double_shift")
+        sb_patch(
+            f"/rest/v1/events?id=eq.{ev['id']}",
+            {"status": "needs_review", "fraud_flags": flags},
+        )
 
 
 # ── п.10 Неполный день + п.11 Выходные ───────────────────────────────────────
@@ -497,6 +541,8 @@ def finalize_event(
             body["employee_id"] = employee["id"]
         if event_type:
             body["event_type"] = event_type
+        if hours is not None:
+            body["hours"] = hours             # сохраняем для double_shift-агрегации
     else:
         body = {
             "status":      "done",
@@ -604,11 +650,43 @@ def main() -> None:
             go_review = True   # неизвестный тип → тоже на проверку
 
         # п.9 Расчёт часов (только если сотрудник найден и тип определён)
-        hours = None
+        hours             = None
         paired_arrival_id = None
+        is_double_shift   = False
+        is_duplicate      = False
         if employee and event_type and not go_review:
-            hours, paired_arrival_id = calculate_hours(employee["id"], event)
-        print(f"     hours: {hours}", flush=True)
+            hours, paired_arrival_id, is_double_shift, is_duplicate = calculate_hours(
+                employee["id"], event
+            )
+        print(f"     hours: {hours} | double: {is_double_shift} | dup: {is_duplicate}", flush=True)
+
+        # Дублирующий departure → status=duplicate, дальше не обрабатываем
+        if is_duplicate:
+            dup_flags = list(fraud_flags)
+            if "duplicate" not in dup_flags:
+                dup_flags.append("duplicate")
+            body = {"status": "duplicate", "fraud_flags": dup_flags}
+            if employee:
+                body["employee_id"] = employee["id"]
+            if event_type:
+                body["event_type"] = event_type
+            sb_patch(f"/rest/v1/events?id=eq.{eid}", body)
+            log("warning", "Duplicate departure detected", {
+                "event_id": eid, "employee": (employee or {}).get("display_name"),
+            })
+            review_count += 1
+            continue
+
+        # Двойная смена → флагуем предыдущую пару + текущее departure идёт на проверку
+        if is_double_shift:
+            dep_ts_dt = datetime.fromisoformat(
+                (event.get("photo_timestamp") or "").replace("Z", "+00:00")
+            )
+            _flag_previous_pair_as_double(employee["id"], dep_ts_dt)
+            if "double_shift" not in fraud_flags:
+                fraud_flags.append("double_shift")
+            go_review = True
+            print(f"     double shift detected → needs_review", flush=True)
 
         # п.10 Неполный день → needs_review (п.11: выходные = будние, спецкода нет)
         if is_incomplete_day(employee, event_type, hours):
@@ -619,12 +697,18 @@ def main() -> None:
         finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
         print(f"     → {'needs_review' if go_review else 'done'}", flush=True)
 
-        # Закрываем парный arrival точечно
-        if paired_arrival_id and not go_review:
-            sb_patch(
-                f"/rest/v1/events?id=eq.{paired_arrival_id}",
-                {"status": "done", "hours": hours},
-            )
+        # Парный arrival: done для нормальной пары, needs_review для двойной смены
+        if paired_arrival_id:
+            if is_double_shift:
+                sb_patch(
+                    f"/rest/v1/events?id=eq.{paired_arrival_id}",
+                    {"status": "needs_review", "fraud_flags": ["double_shift"], "hours": hours},
+                )
+            elif not go_review:
+                sb_patch(
+                    f"/rest/v1/events?id=eq.{paired_arrival_id}",
+                    {"status": "done", "hours": hours},
+                )
 
         # п.14 Уведомление руководителю если needs_review
         if go_review:
