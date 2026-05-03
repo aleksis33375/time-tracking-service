@@ -1219,3 +1219,23 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
 - **Решение:**
   1. `main()`: при `bootstrapped = False` событие немедленно отклоняется: `status='duplicate'`, `fraud_flags=['no_face_detected']`.
   2. `verify_face()` строка 316: `return False` вместо `return None` при `event_encoding is None` — теперь событие получает `fraud_flag='face_mismatch'` и уходит в `needs_review` вместо `done`.
+
+---
+
+### BUG-039: Кнопка «Сохранить» в модалке корректировки записи возвращает 400
+
+- **Файл:** `dashboard/index.html` — `saveReviewEdit()`, строка 1963
+- **Приоритет:** 🔴 КРИТИЧЕСКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-03)
+- **Описание:** В разделе «Проверка» при нажатии «Исправить» → «Сохранить» (даже без изменений) Supabase возвращал `400 Bad Request`. Корректировка любой записи была невозможна.
+- **Причина:** В payload PATCH-запроса `fraud_flags` отправлялось как **строка** `'[]'`:
+  ```javascript
+  const patch = {
+    employee_id: empId,
+    event_type:  eventType,
+    status:      status,
+    fraud_flags: '[]',   // ❌ строка
+  };
+  ```
+  Колонка `fraud_flags` имеет тип `text[]` (PostgreSQL массив), а не JSONB или text. PostgREST пытался разобрать `'[]'` как массив text-элементов и возвращал ошибку. В других местах (строки 1845, 1863, 1868) `fraud_flags` корректно передавалось как JS-массив.
+- **Решение:** Заменить `fraud_flags: '[]'` на `fraud_flags: []` (JS-массив, который JSON.stringify сериализует в `[]` — корректный формат для PostgREST).
