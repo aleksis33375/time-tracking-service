@@ -314,7 +314,7 @@ def verify_face(photo_url: str, employee: dict) -> bool | None:
         return None   # timeout при распознавании — пропускаем верификацию
 
     if event_encoding is None:
-        return None   # лицо не найдено на фото события
+        return False  # нет лица на фото → считаем несовпадением
 
     matches = face_recognition.compare_faces(
         [ref_embedding], event_encoding, tolerance=FACE_TOLERANCE
@@ -632,8 +632,21 @@ def main() -> None:
         if employee and not employee.get("face_embedding"):
             # Первое фото этого сотрудника — сохраняем как эталон
             bootstrapped = bootstrap_face_embedding(employee, photo_url)
-            face_match   = None  # верифицировать не с чем — пропускаем
             print(f"     bootstrap embedding: {'ok' if bootstrapped else 'failed'}", flush=True)
+            if not bootstrapped:
+                # Нет лица на фото → отклоняем событие полностью
+                reject_body = {
+                    "status":      "duplicate",
+                    "fraud_flags": ["no_face_detected"],
+                    "employee_id": employee["id"],
+                }
+                sb_patch(f"/rest/v1/events?id=eq.{eid}", reject_body)
+                log("warning", "No face detected during bootstrap — event rejected", {
+                    "event_id": eid, "employee": employee.get("display_name"),
+                })
+                review_count += 1
+                continue
+            face_match = None  # верифицировать не с чем — пропускаем
         else:
             face_match = verify_face(photo_url, employee) if employee else None
         print(f"     face_match: {face_match}", flush=True)
