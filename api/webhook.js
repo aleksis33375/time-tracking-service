@@ -74,14 +74,11 @@ async function handlePhoto(msg) {
   const caption = parseCaptionText(msg.caption || '');
   console.log('Caption (from msg.caption):', caption);
 
-  // Резервный timestamp: время отправки из Telegram (используется, если EXIF нет)
-  const telegramTimestamp = new Date(msg.date * 1000).toISOString();
-
   // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
   let compressedBuffer = null;
   let photoUrl         = null;
-  let stampTimestamp   = null;  // из EXIF или OCR
-  let timeSource       = 'telegram';
+  let stampTimestamp   = null;  // из EXIF или OCR (ТОЛЬКО из фото!)
+  let timeSource       = 'none';
 
   try {
     const originalBuffer = await downloadTelegramPhoto(largest.file_id);
@@ -114,12 +111,21 @@ async function handlePhoto(msg) {
     }
   }
 
-  const photoTimestamp = stampTimestamp || telegramTimestamp;
+  // Время берём ТОЛЬКО из фото (EXIF или OCR). Если нет — photo_timestamp будет NULL
+  // AI worker отметит такие события как needs_review
+  const photoTimestamp = stampTimestamp;  // null если ничего не нашлось
 
-  // Запись в events — всегда, даже без фото
+  if (!photoTimestamp) {
+    // Запись в events без timestamp — AI worker обработает
+    await logToSupabase('warn', 'webhook-handler', 'No timestamp in photo (no EXIF, no OCR)', {
+      chatId, messageId, name: caption.nameFromPhoto,
+    });
+  }
+
+  // Запись в events — всегда, даже без photo_timestamp
   await insertEvent({
     photo_url:       photoUrl,
-    photo_timestamp: photoTimestamp,
+    photo_timestamp: photoTimestamp,  // может быть NULL если нет EXIF и OCR
     status:          'pending',
     name_from_photo: caption.nameFromPhoto,
     event_type:      caption.eventType,
