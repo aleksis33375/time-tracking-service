@@ -3,6 +3,7 @@ AI Worker — обработка входящих событий из Telegram.
 Запускается GitHub Actions каждые 5 минут.
 """
 import os
+import re
 import json
 import signal
 import tempfile
@@ -65,6 +66,20 @@ def sb_patch(path: str, body: dict, prefer: str = "return=minimal") -> list | di
         timeout=15,
     )
     return res.json() if prefer == "return=representation" else {}
+
+
+def sb_post(path: str, body: dict) -> dict:
+    """POST в Supabase REST API, возвращает созданную запись."""
+    res = requests.post(
+        f"{SUPABASE_URL}{path}",
+        headers={**HEADERS, "Prefer": "return=representation"},
+        json=body,
+        timeout=15,
+    )
+    data = res.json()
+    if isinstance(data, list) and data:
+        return data[0]
+    return data
 
 
 def log(level: str, message: str, meta: dict | None = None) -> None:
@@ -250,6 +265,38 @@ def find_employee_by_name(name: str) -> dict | None:
         return best_emp
 
     return None
+
+
+def auto_create_employee(name: str) -> dict | None:
+    """
+    Создаёт нового сотрудника автоматически если имя валидно.
+    Дефолты: team='Авто', daily_rate=5000, hourly_rate=625.
+    Admin корректирует роль/зарплату вручную в разделе Сотрудники.
+    """
+    clean = _clean_name(name).strip()
+    if not clean:
+        clean = name.strip()
+    if len(clean) < 2:
+        return None
+    # Имя должно содержать хотя бы одну букву (не просто цифры/символы)
+    if not re.search(r'[а-яА-ЯёЁa-zA-Z]', clean):
+        return None
+    # Нормальный регистр: "киселёв леонид" → "Киселёв Леонид"
+    display_name = " ".join(w.capitalize() for w in clean.split())
+    result = sb_post(
+        "/rest/v1/employees",
+        {
+            "display_name": display_name,
+            "team":         "Авто",
+            "daily_rate":   5000,
+            "hourly_rate":  625,
+        },
+    )
+    if not isinstance(result, dict) or "id" not in result:
+        log("warning", f"auto_create_employee failed for {display_name!r}", {"result": str(result)})
+        return None
+    log("info", f"Auto-created employee: {display_name!r}", {"employee_id": result["id"]})
+    return result
 
 # ── п.6 Face recognition верификация ─────────────────────────────────────────
 
@@ -619,12 +666,16 @@ def main() -> None:
         name = event.get("name_from_photo") or ""
         print(f"  → event {eid} | name: {name!r}", flush=True)
 
-        # п.5 Поиск сотрудника
+        # п.5 Поиск сотрудника; если не найден — создаём автоматически
         employee = find_employee_by_name(name)
         if employee:
             print(f"     matched: {employee['display_name']}", flush=True)
         else:
             print(f"     no match for {name!r}", flush=True)
+            if name:
+                employee = auto_create_employee(name)
+                if employee:
+                    print(f"     auto-created: {employee['display_name']} ({employee['id']})", flush=True)
 
         # п.6 Face recognition верификация
         photo_url = event.get("photo_url") or ""
