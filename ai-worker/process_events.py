@@ -288,8 +288,7 @@ def auto_create_employee(name: str) -> dict | None:
         {
             "display_name": display_name,
             "team":         "Авто",
-            "daily_rate":   5000,
-            # hourly_rate — generated column, вычисляется автоматически из daily_rate
+            "daily_rate":   0,   # 0 = не задано; руководитель назначает вручную
         },
     )
     if not isinstance(result, dict) or "id" not in result:

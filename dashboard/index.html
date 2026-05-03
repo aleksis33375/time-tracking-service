@@ -3158,7 +3158,13 @@
         prevMap[empId] = (prevMap[empId] || 0) + h;
       }
 
-      renderTimesheetTable(employees, eMap, days, prevMap);
+      // Сотрудники с командой 'Авто' (авто-созданные, без ставки) — в конец списка
+      const sortedEmployees = [...employees].sort((a, b) => {
+        if (a.team === 'Авто' && b.team !== 'Авто') return 1;
+        if (a.team !== 'Авто' && b.team === 'Авто') return -1;
+        return 0;
+      });
+      renderTimesheetTable(sortedEmployees, eMap, days, prevMap);
     }
 
     let tsLastData = { employees: [], eMap: {}, prevMap: {}, days: [] };
@@ -3264,8 +3270,8 @@
               <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
             </td>
             <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:3px 6px;">${escHtml(emp.position || '—')}</td>
-            <td class="ts-mob-hide">${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') : '—'}</td>
-            <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate ? hourlyRate.toFixed(2) : '—'}</td>
+            <td class="ts-mob-hide">${emp.daily_rate > 0 ? parseFloat(emp.daily_rate).toLocaleString('ru') : (emp.team === 'Авто' ? '?' : '—')}</td>
+            <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate > 0 ? hourlyRate.toFixed(2) : (emp.team === 'Авто' ? '?' : '—')}</td>
             <td class="ts-mob-hide">${prevCell}</td>
             ${dayCells}
             <td class="ts-col-total">${totalHours ? totalHours.toFixed(1) : '—'}</td>
