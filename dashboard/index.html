@@ -118,6 +118,8 @@
       gap: 16px; margin-bottom: 24px;
     }
     .stat-card { padding: 20px; }
+    .stat-card.clickable { cursor: pointer; transition: box-shadow .15s, transform .1s; }
+    .stat-card.clickable:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-1px); }
     .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
     .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
     .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -430,13 +432,13 @@
     <nav class="navbar">
       <span class="navbar-brand">AI Табель</span>
       <div class="navbar-nav">
-        <button class="nav-link active" onclick="navigateTo('overview',   this)">Обзор</button>
-        <button class="nav-link"        onclick="navigateTo('timesheet',  this)">Табель</button>
-        <button class="nav-link"        onclick="navigateTo('attendance', this)">Посещаемость</button>
-        <button class="nav-link"        onclick="navigateTo('employees',  this)">Сотрудники</button>
-        <button class="nav-link"        onclick="navigateTo('review',     this)">Проверка</button>
-        <button class="nav-link"        onclick="navigateTo('analytics',  this)">Аналитика</button>
-        <button class="nav-link"        onclick="navigateTo('logs',       this)">Логи</button>
+        <button class="nav-link active" data-page="overview"    onclick="navigateTo('overview',   this)">Обзор</button>
+        <button class="nav-link"        data-page="timesheet"  onclick="navigateTo('timesheet',  this)">Табель</button>
+        <button class="nav-link"        data-page="attendance" onclick="navigateTo('attendance', this)">Посещаемость</button>
+        <button class="nav-link"        data-page="employees"  onclick="navigateTo('employees',  this)">Сотрудники</button>
+        <button class="nav-link"        data-page="review"     onclick="navigateTo('review',     this)">Проверка</button>
+        <button class="nav-link"        data-page="analytics"  onclick="navigateTo('analytics',  this)">Аналитика</button>
+        <button class="nav-link"        data-page="logs"       onclick="navigateTo('logs',       this)">Логи</button>
       </div>
       <div class="navbar-right">
         <button class="btn-logout" onclick="signOut()"><span>Выйти</span></button>
@@ -465,22 +467,22 @@
         <button class="btn btn-outline btn-sm" onclick="loadOverview()" title="Обновить">↺ Обновить</button>
       </div>
       <div class="cards-grid" style="margin-bottom:20px;">
-        <div class="card stat-card">
+        <div class="card stat-card clickable" onclick="goTo('attendance')" title="Перейти в Посещаемость">
           <div class="stat-label">На объекте сегодня</div>
           <div class="stat-value" id="stat-today">—</div>
           <div class="stat-sub">сотрудников</div>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card clickable" onclick="goTo('review')" title="Перейти в Проверку">
           <div class="stat-label">Требуют проверки</div>
           <div class="stat-value" style="color:var(--danger)" id="stat-review">—</div>
-          <div class="stat-sub">needs_review</div>
+          <div class="stat-sub">за сегодня</div>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card clickable" onclick="goTo('employees')" title="Перейти в Сотрудники">
           <div class="stat-label">Всего сотрудников</div>
           <div class="stat-value" id="stat-employees">—</div>
           <div class="stat-sub">активных в базе</div>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card clickable" onclick="goTo('attendance')" title="Перейти в Посещаемость">
           <div class="stat-label">Фото сегодня</div>
           <div class="stat-value" id="stat-photos">—</div>
           <div class="stat-sub">записей событий</div>
@@ -1304,11 +1306,20 @@
     }
 
     /* ─── Navigation ────────────────────────────────────────────────────── */
+    let rvHighlightEmpId = null;   // employee_id для подсветки после перехода на Проверку
+
+    function goTo(page, options = {}) {
+      if (options.highlightEmployeeId) rvHighlightEmpId = options.highlightEmployeeId;
+      const btn = document.querySelector(`[data-page="${page}"]`);
+      navigateTo(page, btn);
+    }
+
     function navigateTo(page, btn) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
-      if (btn) btn.classList.add('active');
+      const navBtn = btn || document.querySelector(`[data-page="${page}"]`);
+      if (navBtn) navBtn.classList.add('active');
       if (page === 'employees')  loadEmployees();
       if (page === 'timesheet')  loadTimesheet();
       if (page === 'attendance') { attInitDate(); loadAttendance(); }
@@ -1379,6 +1390,8 @@
       if (todayReview > 0) {
         badge.textContent    = `⚠️ ${todayReview} требует проверки`;
         badge.style.display  = '';
+        badge.style.cursor   = 'pointer';
+        badge.onclick        = () => goTo('review');
       } else {
         badge.style.display  = 'none';
       }
@@ -1456,7 +1469,10 @@
           : slot.statuses.includes('pending') ? 'pending'
           : slot.statuses.includes('processing') ? 'processing'
           : 'done';
-        const [statusHtml, rowBg] = STATUS_LABEL[worstStatus] || ['—', ''];
+        let [statusHtml, rowBg] = STATUS_LABEL[worstStatus] || ['—', ''];
+        if (worstStatus === 'needs_review') {
+          statusHtml = `<button onclick="goTo('review',{highlightEmployeeId:'${eid}'})" style="background:none;border:none;padding:0;color:var(--danger);font-weight:600;cursor:pointer;">⚠ Проверить</button>`;
+        }
         const hoursHtml = slot.hours != null ? `<strong>${slot.hours.toFixed(1)}</strong>` : '—';
         const fraudHtml = slot.frauds.length ? ` <span title="${slot.frauds.join(', ')}" style="cursor:default;">⚠️</span>` : '';
 
@@ -1793,7 +1809,7 @@
           ? `<a href="#" onclick="attShowPhoto('${escHtml(ev.photo_url)}');return false;" style="color:var(--accent);font-size:18px;text-decoration:none;" title="Открыть фото">🖼</a>`
           : '<span style="color:#D1D5DB;">—</span>';
 
-        html += `<tr style="border-bottom:1px solid var(--border);background:var(--danger-bg);">
+        html += `<tr data-emp-id="${escHtml(ev.employee_id||'')}" style="border-bottom:1px solid var(--border);background:var(--danger-bg);">
           <td style="padding:9px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;">${fmtDT(ev.photo_timestamp)}</td>
           <td style="padding:9px 10px;color:var(--muted);">${escHtml(ev.name_from_photo || '—')}</td>
           <td style="padding:9px 10px;font-weight:500;">${escHtml(empName)}</td>
@@ -1806,6 +1822,17 @@
         </tr>`;
       }
       document.getElementById('rv-tbody').innerHTML = html;
+
+      if (rvHighlightEmpId) {
+        const tr = document.querySelector(`#rv-tbody tr[data-emp-id="${rvHighlightEmpId}"]`);
+        if (tr) {
+          tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          tr.style.transition = 'background .3s';
+          tr.style.background = '#FEF3C7';
+          setTimeout(() => { tr.style.background = ''; tr.style.transition = ''; }, 2000);
+        }
+        rvHighlightEmpId = null;
+      }
     }
 
     async function confirmDoubleShift(empId, dateKey) {
