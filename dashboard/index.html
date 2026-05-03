@@ -713,10 +713,10 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <select class="input" id="rv-filter-fraud" style="width:210px;" onchange="renderReview()">
           <option value="">Все флаги</option>
-          <option value="face_mismatch">face_mismatch</option>
-          <option value="wrong_location">wrong_location</option>
-          <option value="incomplete_day">incomplete_day</option>
-          <option value="double_shift">double_shift</option>
+          <option value="face_mismatch">Лицо не совпадает</option>
+          <option value="double_shift">Двойная смена</option>
+          <option value="duplicate">Дубль</option>
+          <option value="no_face_detected">Лицо не найдено</option>
         </select>
         <span id="rv-count-label" style="align-self:center;font-size:13px;color:var(--muted);"></span>
       </div>
@@ -1770,7 +1770,8 @@
       // ── Обычная таблица ────────────────────────────────────────────────────
       document.getElementById('rv-table-wrap').style.display = hasRegular ? '' : 'none';
 
-      const FRAUD_COLOR = { face_mismatch: '#DC2626', wrong_location: '#D97706', incomplete_day: '#7C3AED', double_shift: '#0891B2' };
+      const FRAUD_LABEL = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено' };
+      const FRAUD_COLOR = { face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED' };
       const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';
@@ -1783,7 +1784,7 @@
           const flags = parseFraudFlags(ev.fraud_flags);
           if (flags.length) {
             flagsHtml = flags.map(f =>
-                `<span style="display:inline-block;background:${FRAUD_COLOR[f]||'#6B7280'}22;color:${FRAUD_COLOR[f]||'#6B7280'};border:1px solid ${FRAUD_COLOR[f]||'#6B7280'}44;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:3px;">${f}</span>`
+                `<span style="display:inline-block;background:${FRAUD_COLOR[f]||'#6B7280'}22;color:${FRAUD_COLOR[f]||'#6B7280'};border:1px solid ${FRAUD_COLOR[f]||'#6B7280'}44;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:3px;">${FRAUD_LABEL[f]||f}</span>`
               ).join('');
           }
         }
@@ -2211,11 +2212,12 @@
           flagCount[flag] = (flagCount[flag] || 0) + 1;
         }
       }
-      const FRAUD_COLOR = { face_mismatch: 'var(--danger)', wrong_location: 'var(--warning)', incomplete_day: '#7C3AED' };
+      const FRAUD_LABEL_AN = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено' };
+      const FRAUD_COLOR_AN = { face_mismatch: 'var(--danger)', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED' };
       cardsEl.innerHTML = Object.entries(flagCount).map(([flag, cnt]) =>
         `<div style="background:var(--danger-bg);border:1px solid #FECACA;border-radius:var(--radius);padding:10px 16px;min-width:150px;">
-          <div style="font-size:22px;font-weight:700;color:${FRAUD_COLOR[flag]||'#374151'};">${cnt}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${flag}</div>
+          <div style="font-size:22px;font-weight:700;color:${FRAUD_COLOR_AN[flag]||'#374151'};">${cnt}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${FRAUD_LABEL_AN[flag]||flag}</div>
         </div>`
       ).join('');
 
