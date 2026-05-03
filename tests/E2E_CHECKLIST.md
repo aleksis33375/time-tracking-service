@@ -30,7 +30,6 @@ python tests/seed_test_data.py
 # .env file должен содержать:
 TELEGRAM_BOT_TOKEN=xxx
 TELEGRAM_WEBHOOK_SECRET=xxx
-OBJECT_POSTCODE=108818
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=xxx
 ```
@@ -43,25 +42,27 @@ node bot/register-webhook.js
 
 ---
 
-## Фаза 1: Telegram Bot — OCR & Photo Upload
+## Фаза 1: Telegram Bot — парсинг подписи и загрузка фото
 
 ### 1.1 Отправить фото с подписью
 **Что делать:**
 1. Откройте Telegram-группу бота
-2. Отправьте фото (скриншот Timestamp Camera или реальное фото с подписью)
+2. Отправьте селфи-фото
 3. В подписи напишите: **«ТестДима начало смены»**
+   (опционально с временем: **«ТестДима начало смены 08:15»**)
 
 **Ожидается:**
+- [ ] Bot распарсил подпись: имя, тип события, время (если указано)
 - [ ] Bot скачал фото из Telegram
-- [ ] Bot сжал до ~150 КБ
-- [ ] Bot выполнил OCR штампа (дата/время/индекс)
-- [ ] Bot выполнил OCR подписи (имя + тип события)
+- [ ] Bot сжал до ~150 КБ (sharp)
 - [ ] Bot загрузил фото в Supabase Storage
+- [ ] Bot записал лог `"Photo received"` в таблицу `logs`
 
 **Проверка в Supabase:**
-- [ ] Таблица `events`: новая запись с `status=pending`, `photo_url` не null, `name_from_photo='ТестДима'`
+- [ ] Таблица `logs`: entry `level=info, source=webhook-handler, message="Photo received"`
+- [ ] Таблица `events`: новая запись с `status=pending`, `photo_url` не null, `name_from_photo='ТестДима'`, `event_type='arrival'`
 - [ ] Storage `photos/`: файл создан по пути `{chatId}/{messageId}.jpg`
-- [ ] Таблица `logs`: entry с `level=info, source=webhook-handler, message="Event created"`
+- [ ] Таблица `logs`: entry `message="Event created"` после успешной записи
 
 ---
 
@@ -173,8 +174,8 @@ python ai-worker/process_events.py
 ## Итоговая проверка
 
 ### ✅ Все сценарии passed
-- [ ] Bot: OCR & upload работает
-- [ ] Worker: обработка, распознавание, расчёты работают
+- [ ] Bot: парсинг подписи и загрузка фото работает
+- [ ] Worker: обработка, распознавание лиц, расчёты работают
 - [ ] Dashboard: все 7 страниц работают корректно
 - [ ] Данные синхронизированы между компонентами
 - [ ] Логирование полное и информативное
@@ -182,7 +183,7 @@ python ai-worker/process_events.py
 ### 🟡 Known limitations (не блокируют деплой)
 - Face recognition требует эталонного фото в employees.face_embedding (вычисляется GitHub Actions)
 - MANAGER_CHAT_ID может быть не задан (skip Telegram notifications)
-- Некоторые фото из Timestamp Camera читаются OCR с опечатками (fuzzy match их ловит)
+- Имя в подписи может содержать опечатки (fuzzy match их ловит при схожести ≥72%)
 
 ### 📋 Issues found
 **Если нашли баги:**

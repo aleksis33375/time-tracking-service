@@ -550,6 +550,50 @@ def _flag_previous_pair_as_double(employee_id: str, dep_ts: datetime) -> None:
         )
 
 
+# ── Фаза 12: детект дублирующего arrival ─────────────────────────────────────
+
+def check_duplicate_arrival(employee_id: str, current_event: dict) -> bool:
+    """
+    Возвращает True если в окне 24 ч уже есть открытый arrival без парного departure.
+    Открытый arrival = arrival после которого нет departure (сотрудник ещё «внутри»).
+    """
+    if current_event.get("event_type") != "arrival":
+        return False
+
+    ts_str = current_event.get("photo_timestamp")
+    if not ts_str or not employee_id:
+        return False
+
+    def parse_ts(s: str) -> datetime:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+    arr_ts       = parse_ts(ts_str)
+    window_start = arr_ts - timedelta(hours=24)
+
+    rows = sb_get(
+        "/rest/v1/events",
+        f"?employee_id=eq.{employee_id}"
+        f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
+        f"&photo_timestamp=lt.{_ts_for_url(arr_ts)}"
+        f"&status=in.(done,processing,needs_review)"
+        f"&select=id,event_type,photo_timestamp"
+        f"&order=photo_timestamp.asc",
+    )
+
+    if not isinstance(rows, list):
+        return False
+
+    open_arrival = False
+    for ev in rows:
+        ev_type = ev.get("event_type")
+        if ev_type == "arrival":
+            open_arrival = True
+        elif ev_type == "departure":
+            open_arrival = False
+
+    return open_arrival
+
+
 # ── п.10 Неполный день + п.11 Выходные ───────────────────────────────────────
 
 def is_incomplete_day(employee: dict | None, event_type: str | None, hours: float | None) -> bool:
@@ -739,6 +783,25 @@ def main() -> None:
             })
             review_count += 1
             continue
+
+        # Фаза 12: дублирующий arrival (два arrival подряд без departure между ними)
+        if event_type == "arrival" and employee and not go_review:
+            if check_duplicate_arrival(employee["id"], event):
+                dup_flags = list(fraud_flags)
+                if "duplicate" not in dup_flags:
+                    dup_flags.append("duplicate")
+                sb_patch(f"/rest/v1/events?id=eq.{eid}", {
+                    "status":      "duplicate",
+                    "fraud_flags": dup_flags,
+                    "employee_id": employee["id"],
+                    "event_type":  event_type,
+                })
+                log("warning", "Duplicate arrival detected", {
+                    "event_id": eid, "employee": employee.get("display_name"),
+                })
+                print(f"     → duplicate arrival", flush=True)
+                review_count += 1
+                continue
 
         # Двойная смена → флагуем предыдущую пару + текущее departure идёт на проверку
         if is_double_shift:

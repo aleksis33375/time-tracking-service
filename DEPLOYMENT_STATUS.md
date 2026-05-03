@@ -1,197 +1,82 @@
 # Deployment Status — AI Attendance System
 
-**Date:** 2026-04-22  
-**Status:** ✅ Ready for Vercel deployment
-
-## What's Been Configured
-
-### ✅ Vercel Configuration
-- [x] `vercel.json` — Project config, rewrites, headers
-- [x] `.vercelignore` — Excludes unnecessary files (tests, docs, AI Worker)
-- [x] `bot/package.json` — Build script added
-- [x] API webhook — Configured for `POST /api/webhook`
-- [x] Dashboard SPA — Rewrites root to index.html
-
-### ✅ Environment Setup
-- [x] Required env vars documented (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, etc.)
-- [x] GitHub Secrets template provided
-- [x] Vercel Secrets guide created
-
-### ✅ Documentation
-- [x] `DEPLOYMENT.md` — Step-by-step deployment guide (30 min)
-  - Part 1: Vercel Dashboard + Bot deployment
-  - Part 2: GitHub Actions setup
-  - Part 3: End-to-end testing on production
-  - Part 4: Production configuration & monitoring
-  - Troubleshooting section
-- [x] Webhook registration instructions
-- [x] Monitoring & backup setup guide
-
-### ✅ GitHub Actions
-- [x] `ai-worker/process_events.py` — Scheduled workflow (cron: 5-10 min)
-- [x] `ai-worker/cleanup_photos.py` — Scheduled workflow (cron: daily)
-- [x] `ai-worker/compute_embeddings.py` — On-demand for face embedding
-- [x] All workflows in `.github/workflows/*.yml`
-
-### ✅ Dashboard
-- [x] Single-page application (index.html) — ready for static hosting
-- [x] 7 pages fully functional: Обзор, Посещаемость, Проверка, Табель, Аналитика, Логи, Сотрудники
-- [x] All Supabase integrations working
-- [x] Export (Excel, PDF) functional
-
-### ✅ Bot
-- [x] Webhook handler — `api/webhook.js`
-- [x] OCR parsing (stamp & caption) — tested & verified
-- [x] Photo upload to Supabase Storage
-- [x] Event creation with parsed data
+**Дата обновления:** 2026-05-03  
+**Статус:** ✅ Система в продакшне, работает
 
 ---
 
-## Next Steps (Manual)
+## Текущие URL
 
-1. **Create Vercel Account**
-   - Go to https://vercel.com/new
-   - Sign in with GitHub
-   - Import `time-tracking-service` repo
-
-2. **Add Environment Variables in Vercel UI**
-   ```
-   SUPABASE_URL = https://xxx.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY = eyJhbGc...
-   TELEGRAM_BOT_TOKEN = 123456:ABCdef...
-   TELEGRAM_WEBHOOK_SECRET = your-secret
-   OBJECT_POSTCODE = 108818
-   ```
-
-3. **Register Telegram Webhook**
-   ```bash
-   node bot/register-webhook.js
-   # Or manually via curl (see DEPLOYMENT.md)
-   ```
-
-4. **Add GitHub Secrets**
-   - Settings → Secrets → Actions
-   - Add same env vars as above
-
-5. **Test End-to-End**
-   - Send test photo via Telegram
-   - Run "Process Events" workflow manually
-   - Check Dashboard for results
-
-6. **Enable Scheduled Workflows**
-   - Actions → "Process Events" → Enable
-   - Actions → "Delete Photos" → Enable
-   - (Already scheduled in `.github/workflows/*.yml`)
+| Компонент | URL |
+|---|---|
+| Dashboard | https://time-tracking-service-beta.vercel.app/ |
+| Webhook (Telegram) | https://time-tracking-service-beta.vercel.app/api/webhook |
+| Supabase | https://weqvsquaftkxrafybrnk.supabase.co |
 
 ---
 
-## Deployment URLs (After Vercel Deploy)
+## Статус компонентов
 
-Once deployed to Vercel:
+### ✅ Vercel (Dashboard + Webhook)
+- Задеплоен, работает
+- `api/webhook.js` — принимает фото из Telegram, парсит подпись, сохраняет в Supabase
+- `dashboard/index.html` — SPA, 7 страниц, доступен по URL выше
+- Webhook зарегистрирован у Telegram (`setWebhook`)
 
-```
-Dashboard:     https://time-tracking-service.vercel.app/
-Webhook:       https://time-tracking-service.vercel.app/api/webhook
-```
+### ✅ Supabase (База данных + Storage)
+- Таблицы: `employees`, `events`, `logs`
+- Storage buckets: `photos`, `ref-photos`
+- RLS настроены
+- Auth user: `admin@dashboard.local`
 
-Or with custom domain:
-```
-Dashboard:     https://yourdomain.com/
-Webhook:       https://yourdomain.com/api/webhook
-```
-
----
-
-## Architecture Diagram
-
-```
-Telegram User
-    ↓ (sends photo)
-Telegram API
-    ↓ 
-Vercel: POST /api/webhook
-    ├─ OCR: parseStampText (date/time/postcode)
-    ├─ OCR: parseCaptionText (name/event_type)
-    ├─ Supabase: INSERT events (status=pending)
-    └─ Supabase: INSERT logs
-    
-Scheduled: every 5-10 min
-    ↓
-GitHub Actions: process_events.py
-    ├─ Fetch pending events
-    ├─ Find employee (fuzzy match)
-    ├─ Verify face (if embedding exists)
-    ├─ Calculate hours
-    ├─ UPDATE events (status=done or needs_review)
-    └─ Supabase: INSERT logs, notify Telegram manager
-
-Manager/Admin
-    ↓ (accesses)
-Vercel: GET /
-    └─ Dashboard (static SPA)
-       ├─ Supabase Auth (login)
-       ├─ Read events/employees (REST API)
-       ├─ Can edit events via "Проверка" page
-       └─ PDF/Excel export
-
-Scheduled: once daily
-    ↓
-GitHub Actions: cleanup_photos.py
-    └─ Delete photos older than 60 days from Storage
-```
+### ✅ GitHub Actions (AI Worker)
+- `ai-worker.yml` — каждые 5 мин, обрабатывает pending → done/needs_review
+- `cleanup-photos.yml` — ежедневно 02:00 UTC, удаляет фото старше 60 дней
+- `face-embedding.yml` — каждые 10 мин, вычисляет face embeddings для новых сотрудников
+- Все workflows включены и работают
 
 ---
 
-## Files Modified/Created for Deployment
+## Настроенные секреты
 
-```
-Root:
-├── vercel.json                  ← Project config
-├── .vercelignore               ← Ignore patterns
-├── DEPLOYMENT.md               ← Deployment guide
-├── DEPLOYMENT_STATUS.md        ← This file
-│
-bot/:
-├── package.json                ← Updated with build script
-├── vercel.json                 ← Existing config
-├── api/webhook.js              ← Existing webhook handler
-│
-dashboard/:
-├── index.html                  ← Existing SPA
-│
-.github/workflows/:
-├── process_events.yml          ← Existing scheduled workflow
-├── delete_photos.yml           ← Existing scheduled workflow
-└── compute_embeddings.yml      ← Existing on-demand workflow
-```
+### GitHub Secrets (для Actions)
+- [x] `SUPABASE_URL`
+- [x] `SUPABASE_SERVICE_ROLE_KEY`
+- [x] `TELEGRAM_BOT_TOKEN`
+- [ ] `MANAGER_CHAT_ID` — **не настроен** (уведомления руководителю не работают)
+
+### Vercel Environment Variables
+- [x] `SUPABASE_URL`
+- [x] `SUPABASE_SERVICE_ROLE_KEY`
+- [x] `TELEGRAM_BOT_TOKEN`
+- [x] `TELEGRAM_WEBHOOK_SECRET`
 
 ---
 
-## Estimated Timeline
+## Что работает
 
-| Phase | Duration | Status |
-|-------|----------|--------|
-| Create Vercel account | 2 min | Manual |
-| Deploy via Vercel UI | 5 min | Automatic |
-| Add environment variables | 5 min | Manual |
-| Register Telegram webhook | 2 min | Manual |
-| Add GitHub Secrets | 3 min | Manual |
-| Enable workflows | 2 min | Manual |
-| Test E2E cycle | 10 min | Manual |
-| **Total** | **~30 min** | ✅ Ready |
+- [x] Рабочий отправляет фото → сохраняется в events(status=pending)
+- [x] AI Worker обрабатывает: face recognition, расчёт часов, fraud_flags
+- [x] Автосоздание нового сотрудника при первом фото (команда «Авто»)
+- [x] Нечеловеческие фото (лестница, предметы) отклоняются (BUG-038)
+- [x] Двойные смены детектируются и попадают в needs_review
+- [x] Dashboard: Обзор, Посещаемость, Проверка, Табель, Аналитика, Логи, Сотрудники
+- [x] Экспорт Excel и PDF
+- [x] Cleanup старых фото (60 дней)
 
----
+## Что НЕ работает / Не настроено
 
-## Support Resources
-
-- **Vercel Docs**: https://vercel.com/docs
-- **GitHub Actions**: https://docs.github.com/actions
-- **Supabase**: https://supabase.com/docs
-- **Telegram Bot API**: https://core.telegram.org/bots/api
-- **Project Issues**: https://github.com/aleksis33375/time-tracking-service/issues
+- [ ] Telegram-уведомления руководителю при needs_review (нужен MANAGER_CHAT_ID)
+- [ ] Парсинг времени из подписи (Фаза 11 — не реализована)
 
 ---
 
-**Last updated:** 2026-04-22  
-**Configuration version:** 1.0  
-**Ready for production deployment:** ✅ YES
+## Последние деплои
+
+| Дата | Что изменилось |
+|---|---|
+| 2026-05-03 | BUG-038: отклонение фото без лица; авто-создание сотрудников (Этап C) |
+| 2026-05-01 | Этап B: buffer-state алгоритм, детект двойных смен, UI карточки Review |
+| 2026-05-01 | Этап A: фикс URL-encoding +00:00, pair-based расчёт часов (commit 6de68d4) |
+| 2026-04-30 | BUG-030: EXIF + OCR timestamp extraction в webhook |
+| 2026-04-25 | BUG-025: расширен парсер подписей (канца, канец и др.) |

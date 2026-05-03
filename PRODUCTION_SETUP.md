@@ -97,7 +97,7 @@ Add these secrets (if not already present):
 | `SUPABASE_URL` | Your Supabase project URL | ✅ | `https://xxx.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key | ✅ | `eyJhbGc...` |
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather | ⚠️ | `123456:ABCdef...` |
-| `MANAGER_CHAT_ID` | Your Telegram chat ID | ⚠️ | `987654321` |
+| `MANAGER_CHAT_ID` | Your Telegram chat ID | ⚠️ | `987654321` | ← **Не настроен** — уведомления не работают |
 
 **Where to find each:**
 - **SUPABASE_URL**: Supabase Project → Settings → API → URL
@@ -437,6 +437,10 @@ Before going live, verify all of these:
 
 ## Last Updated
 
-**Date:** 2026-04-22  
+**Date:** 2026-05-03  
 **Status:** Production Ready ✅  
 **All workflows configured and tested:** ✅
+  
+
+**Примечание:** `MANAGER_CHAT_ID` не настроен — Telegram-уведомления руководителю при
+`needs_review` не отправляются. Настройка по Фазе 13.1 в PLAN.md.
