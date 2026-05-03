@@ -282,21 +282,26 @@
       position: fixed; z-index: 500; display: none;
       background: var(--surface); border-radius: var(--radius);
       box-shadow: 0 8px 32px rgba(0,0,0,.2); border: 1px solid var(--border);
-      padding: 6px; pointer-events: none; min-width: 160px;
+      padding: 8px; pointer-events: none;
     }
     #ts-photo-tooltip .tip-header {
       font-size: 11px; font-weight: 600; color: var(--muted);
-      margin-bottom: 5px; white-space: nowrap; overflow: hidden;
-      text-overflow: ellipsis; max-width: 172px;
+      margin-bottom: 6px; white-space: nowrap;
     }
-    #ts-photo-tooltip .tip-img-wrap {
-      width: 172px; height: 172px;
+    #ts-photo-tooltip .tip-photos { display: flex; gap: 6px; }
+    #ts-photo-tooltip .tip-photo-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    #ts-photo-tooltip .tip-photo-item img {
+      width: 150px; height: 150px; object-fit: cover; border-radius: 4px; display: block;
+    }
+    #ts-photo-tooltip .tip-photo-no {
+      width: 150px; height: 150px; background: #F3F4F6; border-radius: 4px;
       display: flex; align-items: center; justify-content: center;
-      background: #F3F4F6; border-radius: 4px; overflow: hidden;
+      font-size: 11px; color: var(--muted);
     }
-    #ts-photo-tooltip img { width: 172px; height: 172px; object-fit: cover; display: block; }
-    .ts-day[data-photo] { cursor: pointer; }
-    .ts-day[data-photo]:hover { filter: brightness(.94); }
+    #ts-photo-tooltip .tip-type { font-size: 10px; font-weight: 700; color: var(--muted); }
+    #ts-photo-tooltip .tip-time { font-size: 11px; font-weight: 600; color: var(--text); }
+    .ts-day[data-events] { cursor: pointer; }
+    .ts-day[data-events]:hover { filter: brightness(.94); }
     .ts-pt-btn {
       padding: 6px 12px; border: none; background: none; font-size: 13px;
       font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap;
@@ -891,7 +896,7 @@
   <!-- Тултип: фото по ячейке дня в Табеле -->
   <div id="ts-photo-tooltip">
     <div class="tip-header" id="ts-tip-header"></div>
-    <div class="tip-img-wrap" id="ts-tip-img-wrap">
+    <div id="ts-tip-content" style="display:flex;align-items:center;justify-content:center;min-width:80px;min-height:40px;">
       <span class="spinner spinner-md"></span>
     </div>
   </div>
@@ -2848,7 +2853,7 @@
     let   tipVisible    = false;
 
     function tipCell(el) {
-      return el.dataset.photo ? el : (el.closest('td[data-photo]') || null);
+      return el.dataset.events ? el : (el.closest('td[data-events]') || null);
     }
 
     document.addEventListener('mouseover', e => {
@@ -2886,48 +2891,63 @@
     }
 
     async function showDayPhoto(e, td) {
-      const photoPath = td.dataset.photo;
-      const empName   = td.dataset.emp  || '';
-      const date      = td.dataset.date || '';
+      let events;
+      try { events = JSON.parse(td.dataset.events || '[]'); } catch { return; }
+      if (!events.length) return;
+
+      const empName = td.dataset.emp  || '';
+      const date    = td.dataset.date || '';
 
       const tip     = document.getElementById('ts-photo-tooltip');
       const header  = document.getElementById('ts-tip-header');
-      const imgWrap = document.getElementById('ts-tip-img-wrap');
+      const content = document.getElementById('ts-tip-content');
 
       // Заголовок: имя + дата
-      const [, m, d] = date.split('-');
-      header.textContent = `${empName} · ${parseInt(d)}.${parseInt(m)}`;
+      const [, mo, dy] = date.split('-');
+      header.textContent = `${empName} · ${parseInt(dy)}.${parseInt(mo)}`;
 
-      // Показываем спиннер пока грузится
-      imgWrap.innerHTML = '<span class="spinner spinner-md"></span>';
+      // Спиннер пока грузятся фото
+      content.innerHTML = '<span class="spinner spinner-md" style="margin:20px;"></span>';
       tip.style.display = 'block';
       tipVisible = true;
       positionTip(e.clientX, e.clientY);
 
-      // Получаем подписанный URL (с кешированием)
-      let signedUrl = photoUrlCache[photoPath];
-      if (!signedUrl) {
-        signedUrl = await getSignedUrl(photoPath);
-        if (signedUrl) photoUrlCache[photoPath] = signedUrl;
-      }
+      // Сортируем по времени, загружаем подписанные URL параллельно
+      const sorted = [...events].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+      const loaded = await Promise.all(sorted.map(async ev => {
+        let url = photoUrlCache[ev.url];
+        if (!url && ev.url) {
+          url = await getSignedUrl(ev.url);
+          if (url) photoUrlCache[ev.url] = url;
+        }
+        return { ...ev, signedUrl: url || null };
+      }));
 
-      if (!tipVisible) return;   // пользователь уже убрал курсор
+      if (!tipVisible) return;
 
-      if (signedUrl) {
-        const img = new Image();
-        img.onload = () => {
-          if (!tipVisible) return;
-          imgWrap.innerHTML = '';
-          imgWrap.appendChild(img);
-        };
-        img.onerror = () => {
-          imgWrap.innerHTML = '<span style="color:var(--muted);font-size:12px;">Нет фото</span>';
-        };
-        img.src = signedUrl;
-        img.style.cssText = 'width:172px;height:172px;object-fit:cover;display:block;border-radius:4px;';
-      } else {
-        imgWrap.innerHTML = '<span style="color:var(--muted);font-size:12px;">Нет фото</span>';
+      function fmtTs(iso) {
+        if (!iso) return '';
+        const d = new Date(new Date(iso).getTime() + 3 * 3600000);
+        return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} МСК`;
       }
+      const TYPE = { arrival: 'Приход', departure: 'Уход', unknown: '?' };
+
+      // Двойная смена: 4 события — 2 ряда по 2; иначе 1 ряд
+      const wrapStyle = loaded.length > 2
+        ? 'display:grid;grid-template-columns:repeat(2,150px);gap:6px;'
+        : 'display:flex;gap:6px;';
+
+      content.innerHTML = `<div class="tip-photos" style="${wrapStyle}">${loaded.map(ev => `
+        <div class="tip-photo-item">
+          ${ev.signedUrl
+            ? `<img src="${ev.signedUrl}" alt="">`
+            : '<div class="tip-photo-no">Нет фото</div>'}
+          <span class="tip-type">${TYPE[ev.type] || ev.type}</span>
+          <span class="tip-time">${fmtTs(ev.ts)}</span>
+        </div>`).join('')}
+      </div>`;
+
+      positionTip(e.clientX, e.clientY);
     }
 
     function hideDayPhoto() {
@@ -3150,9 +3170,13 @@
         const dk    = toMskDate(ev.photo_timestamp);
         const empId = ev.employee_id;
         if (!eMap[empId]) eMap[empId] = {};
-        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null, double_shift: false, shift_hours: [] };
+        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null, double_shift: false, shift_hours: [], events: [] };
         const cell  = eMap[empId][dk];
         const flags = parseFraudFlags(ev.fraud_flags);
+        // Собираем все фото для тултипа (arrival + departure)
+        if (ev.photo_url && ev.photo_timestamp) {
+          cell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
+        }
         // Двойная смена: собираем часы каждой пары по departure-событиям
         if (flags.includes('double_shift')) {
           cell.double_shift = true;
@@ -3257,8 +3281,8 @@
             const cell = empData[dateKeys[i]];
             const wknd = isWknd[i];
             const wkndStyle = wknd ? 'background:#FFF3E0;' : '';
-            const photoAttr = cell && cell.photo_url
-              ? ` data-photo="${escHtml(cell.photo_url)}" data-emp="${escHtml(emp.display_name)}" data-date="${dateKeys[i]}"`
+            const photoAttr = cell && cell.events && cell.events.length
+              ? ` data-events="${escHtml(JSON.stringify(cell.events))}" data-emp="${escHtml(emp.display_name)}" data-date="${dateKeys[i]}"`
               : '';
 
             if (!cell) {
