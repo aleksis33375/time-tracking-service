@@ -111,25 +111,27 @@ async function handlePhoto(msg) {
     }
   }
 
-  // Время берём ТОЛЬКО из фото (EXIF или OCR). Если нет — photo_timestamp будет NULL
-  // AI worker отметит такие события как needs_review
-  const photoTimestamp = stampTimestamp;  // null если ничего не нашлось
+  // Если EXIF и OCR не нашли время — fallback на время сообщения Telegram (UTC, точность ±секунды).
+  // Событие помечается флагом time_from_telegram, чтобы руководитель мог проверить точность.
+  const telegramTimestamp = new Date(msg.date * 1000).toISOString();
+  const photoTimestamp    = stampTimestamp || telegramTimestamp;
+  const extraFlags        = stampTimestamp ? [] : ['time_from_telegram'];
 
-  if (!photoTimestamp) {
-    // Запись в events без timestamp — AI worker обработает
-    await logToSupabase('warn', 'webhook-handler', 'No timestamp in photo (no EXIF, no OCR)', {
+  if (!stampTimestamp) {
+    await logToSupabase('warn', 'webhook-handler', 'Time taken from Telegram (no EXIF, no OCR)', {
       chatId, messageId, name: caption.nameFromPhoto,
     });
   }
 
-  // Запись в events — всегда, даже без photo_timestamp
+  // Запись в events
   await insertEvent({
     photo_url:       photoUrl,
-    photo_timestamp: photoTimestamp,  // может быть NULL если нет EXIF и OCR
+    photo_timestamp: photoTimestamp,
     status:          'pending',
     name_from_photo: caption.nameFromPhoto,
     event_type:      caption.eventType,
     event_type_raw:  caption.eventTypeRaw,
+    fraud_flags:     extraFlags,
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {

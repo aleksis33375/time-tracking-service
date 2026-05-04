@@ -724,6 +724,7 @@
           <option value="double_shift">Двойная смена</option>
           <option value="duplicate">Дубль</option>
           <option value="no_face_detected">Лицо не найдено</option>
+          <option value="time_from_telegram">Время из Telegram</option>
         </select>
         <span id="rv-count-label" style="align-self:center;font-size:13px;color:var(--muted);"></span>
       </div>
@@ -1791,8 +1792,8 @@
       // ── Обычная таблица ────────────────────────────────────────────────────
       document.getElementById('rv-table-wrap').style.display = hasRegular ? '' : 'none';
 
-      const FRAUD_LABEL = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено' };
-      const FRAUD_COLOR = { face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED' };
+      const FRAUD_LABEL = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено', time_from_telegram: 'Время из Telegram' };
+      const FRAUD_COLOR = { face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280' };
       const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';
@@ -2244,8 +2245,8 @@
           flagCount[flag] = (flagCount[flag] || 0) + 1;
         }
       }
-      const FRAUD_LABEL_AN = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено' };
-      const FRAUD_COLOR_AN = { face_mismatch: 'var(--danger)', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED' };
+      const FRAUD_LABEL_AN = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено', time_from_telegram: 'Время из Telegram' };
+      const FRAUD_COLOR_AN = { face_mismatch: 'var(--danger)', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280' };
       cardsEl.innerHTML = Object.entries(flagCount).map(([flag, cnt]) =>
         `<div style="background:var(--danger-bg);border:1px solid #FECACA;border-radius:var(--radius);padding:10px 16px;min-width:150px;">
           <div style="font-size:22px;font-weight:700;color:${FRAUD_COLOR_AN[flag]||'#374151'};">${cnt}</div>
