@@ -3146,7 +3146,7 @@
           `&status=in.(done,needs_review)&limit=5000`
         ),
         prevStartISO ? guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,hours` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours` +
           `&photo_timestamp=gte.${prevStartISO}&photo_timestamp=lt.${prevEndISO}` +
           `&status=eq.done&hours=not.is.null&limit=5000`
         ) : Promise.resolve([])
@@ -3165,48 +3165,91 @@
         return `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
       }
 
-      // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url, double_shift, shift_hours }
-      const eMap = {};
+      // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url, double_shift, shift_hours, events }
+      // Pair-walker: группируем события по сотруднику, сортируем по времени, строим пары arrival→departure.
+      // Часы атрибутируем к дню ARRIVAL. Если arrival.hours == null (needs_review), берём из парного departure.
+      const byEmp = {};
       for (const ev of events || []) {
         if (!ev.employee_id || !ev.photo_timestamp) continue;
-        const dk    = toMskDate(ev.photo_timestamp);
-        const empId = ev.employee_id;
-        if (!eMap[empId]) eMap[empId] = {};
-        if (!eMap[empId][dk]) eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null, double_shift: false, shift_hours: [], events: [] };
-        const cell  = eMap[empId][dk];
-        const flags = parseFraudFlags(ev.fraud_flags);
-        // Собираем все фото для тултипа (arrival + departure)
-        if (ev.photo_url && ev.photo_timestamp) {
-          cell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
-        }
-        // Двойная смена: собираем часы каждой пары по arrival-событиям
-        if (flags.includes('double_shift')) {
-          cell.double_shift = true;
-          if (ev.event_type === 'arrival' && ev.hours != null) {
-            cell.shift_hours.push(ev.hours);
-          }
-        } else {
-          // Часы берём только из arrival: departure может быть в следующем дне (ночная смена)
-          if (ev.event_type === 'arrival' && ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
-            cell.hours     = ev.hours;
-            cell.photo_url = ev.photo_url || cell.photo_url;
-          } else if (!cell.photo_url && ev.photo_url) {
-            cell.photo_url = ev.photo_url;
-          }
-        }
-        if (ev.status === 'needs_review') cell.review = true;
-        if (flags.length)                 cell.fraud  = true;
+        (byEmp[ev.employee_id] = byEmp[ev.employee_id] || []).push(ev);
+      }
+      for (const empId in byEmp) {
+        byEmp[empId].sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
       }
 
-      // Переход часов: суммируем максимальные часы за каждый день предыдущего периода
-      // (берём max на случай если оба события arrival+departure попали в done с hours)
-      const prevDayMax = {};   // `${empId}|${date}` → maxHours
+      const eMap = {};
+      for (const empId in byEmp) {
+        const evs = byEmp[empId];
+        if (!eMap[empId]) eMap[empId] = {};
+
+        for (let i = 0; i < evs.length; i++) {
+          const ev    = evs[i];
+          const dk    = toMskDate(ev.photo_timestamp);
+          const flags = parseFraudFlags(ev.fraud_flags);
+
+          if (!eMap[empId][dk])
+            eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null,
+                                double_shift: false, shift_hours: [], events: [] };
+          const cell = eMap[empId][dk];
+
+          // Фото для тултипа — собираем для всех событий (arrival + departure)
+          if (ev.photo_url) {
+            cell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
+          }
+          if (ev.status === 'needs_review') cell.review = true;
+          if (flags.length)                 cell.fraud  = true;
+
+          // Часы атрибутируем только к дню arrival
+          if (ev.event_type !== 'arrival') continue;
+
+          // Эффективные часы: arrival.hours, иначе из следующего departure этого сотрудника
+          let effHours = ev.hours;
+          if (effHours == null) {
+            for (let j = i + 1; j < evs.length; j++) {
+              if (evs[j].event_type === 'departure') { effHours = evs[j].hours; break; }
+              if (evs[j].event_type === 'arrival')   break;  // новый arrival — пары нет
+            }
+          }
+          if (effHours == null) continue;  // одиночный arrival без часов
+
+          if (flags.includes('double_shift')) {
+            cell.double_shift = true;
+            cell.shift_hours.push(effHours);
+          } else if (cell.hours === null || effHours > cell.hours) {
+            cell.hours     = effHours;
+            cell.photo_url = ev.photo_url || cell.photo_url;
+          }
+        }
+      }
+
+      // Переход часов: часы за каждый день предыдущего периода — по парам arrival→departure
+      const prevByEmp = {};
       for (const ev of prevEvents || []) {
-        if (!ev.employee_id || !ev.photo_timestamp || ev.hours == null) continue;
-        if (ev.event_type !== 'arrival') continue;
-        const key = `${ev.employee_id}|${toMskDate(ev.photo_timestamp)}`;
-        if (prevDayMax[key] == null || ev.hours > prevDayMax[key])
-          prevDayMax[key] = ev.hours;
+        if (!ev.employee_id || !ev.photo_timestamp) continue;
+        (prevByEmp[ev.employee_id] = prevByEmp[ev.employee_id] || []).push(ev);
+      }
+      for (const empId in prevByEmp) {
+        prevByEmp[empId].sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
+      }
+
+      const prevDayMax = {};   // `${empId}|${date}` → maxHours
+      for (const empId in prevByEmp) {
+        const evs = prevByEmp[empId];
+        for (let i = 0; i < evs.length; i++) {
+          const ev = evs[i];
+          if (ev.event_type !== 'arrival') continue;
+          let effHours = ev.hours;
+          if (effHours == null) {
+            for (let j = i + 1; j < evs.length; j++) {
+              if (evs[j].event_type === 'departure') { effHours = evs[j].hours; break; }
+              if (evs[j].event_type === 'arrival')   break;
+            }
+          }
+          if (effHours == null) continue;
+          const key = `${empId}|${toMskDate(ev.photo_timestamp)}`;
+          if (prevDayMax[key] == null || effHours > prevDayMax[key])
+            prevDayMax[key] = effHours;
+        }
       }
       const prevMap = {};   // empId → totalHours прошлого периода
       for (const [key, h] of Object.entries(prevDayMax)) {

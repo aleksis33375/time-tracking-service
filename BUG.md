@@ -1266,3 +1266,18 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
   - В `loadTimesheet()` prevDayMax: добавлен фильтр `event_type !== 'arrival' → continue`.
   - В `loadAnalytics()`: добавлен фильтр `event_type !== 'arrival' → continue` перед суммированием часов.
   - Бэкенд (`ai-worker/process_events.py`) не менялся — worker корректно записывает часы в arrival-событие, дашборд теперь читает именно оттуда.
+  - **Побочный эффект BUG-041:** prevEvents-запрос не содержал `event_type` в select, из-за чего добавленный фильтр `event_type !== 'arrival' → continue` пропускал ВСЕ prevEvents → «переход часов» всегда был нулём. Исправлено в BUG-042.
+
+---
+
+### BUG-042: Знаки `?` в Табеле за 3-5 мая — arrival.hours = null для needs_review событий
+
+- **Файл:** `dashboard/index.html` — функции `loadTimesheet()` (~строка 3168), prevDayMax (~строка 3225)
+- **Приоритет:** 🟠 ВЫСОКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-05)
+- **Описание:** После BUG-041 дашборд читал `hours` только из arrival-событий. Но worker для `needs_review`-событий (в т.ч. все `time_from_telegram`) не пишет `hours` в paired_arrival — только в departure (`process_events.py:827-837`, ветка `go_review=True`). Итог: arrival.hours = null, departure.hours = N → пара видна в `cell.events`, но `cell.hours = null` → символ `?`. Затронуты 3-5 мая (события с флагом `time_from_telegram` после BUG-040 сброса).
+- **Причина-триггер:** Цепочка BUG-040 → BUG-041 → worker не пишет часы в arrival при needs_review.
+- **Решение (Вариант А — frontend pair-walker):**
+  - В `loadTimesheet()` заменён простой цикл на pair-walker: события группируются по сотруднику, сортируются по времени, строятся пары arrival→departure. Часы атрибутируются к дню arrival. Если `arrival.hours == null` — fallback на `departure.hours` парного события.
+  - `prevDayMax` переписан аналогично + добавлен `event_type` в prevEvents-запрос (там он не был выбран).
+  - Бэкенд не менялся.
