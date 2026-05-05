@@ -3132,6 +3132,10 @@
       }
       const { days, startISO, endISO, prevStartISO, prevEndISO, label } = period;
 
+      // Буфер ±18ч для захвата ночных смен через границу периода (departure может быть за endISO)
+      const bufStartISO = new Date(new Date(startISO).getTime() - 18*3600000).toISOString();
+      const bufEndISO   = new Date(new Date(endISO).getTime()   + 18*3600000).toISOString();
+
       document.getElementById('ts-period-label').textContent = label;
       document.getElementById('ts-nav-label').textContent    = label;
 
@@ -3142,7 +3146,7 @@
         ),
         guardedFetch(
           `/rest/v1/events?select=employee_id,photo_timestamp,hours,status,fraud_flags,photo_url,event_type` +
-          `&photo_timestamp=gte.${startISO}&photo_timestamp=lt.${endISO}` +
+          `&photo_timestamp=gte.${bufStartISO}&photo_timestamp=lt.${bufEndISO}` +
           `&status=in.(done,needs_review)&limit=5000`
         ),
         prevStartISO ? guardedFetch(
@@ -3187,6 +3191,9 @@
           const dk    = toMskDate(ev.photo_timestamp);
           const flags = parseFraudFlags(ev.fraud_flags);
 
+          // Пропускаем буферные события вне периода — они доступны лишь для inner j-loop (paired departure)
+          if (dk < days[0] || dk > days[days.length - 1]) continue;
+
           if (!eMap[empId][dk])
             eMap[empId][dk] = { hours: null, review: false, fraud: false, photo_url: null,
                                 double_shift: false, shift_hours: [], events: [] };
@@ -3221,8 +3228,8 @@
           if (flags.includes('double_shift')) {
             cell.double_shift = true;
             cell.shift_hours.push(effHours);
-          } else if (cell.hours === null || effHours > cell.hours) {
-            cell.hours     = effHours;
+          } else {
+            cell.hours = (cell.hours || 0) + effHours;  // сумма всех смен дня, не max
             cell.photo_url = ev.photo_url || cell.photo_url;
           }
         }
@@ -3258,8 +3265,7 @@
           }
           if (effHours == null) continue;
           const key = `${empId}|${toMskDate(ev.photo_timestamp)}`;
-          if (prevDayMax[key] == null || effHours > prevDayMax[key])
-            prevDayMax[key] = effHours;
+          prevDayMax[key] = (prevDayMax[key] || 0) + effHours;  // сумма смен, не max
         }
       }
       const prevMap = {};   // empId → totalHours прошлого периода

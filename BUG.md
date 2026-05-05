@@ -1297,3 +1297,17 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
   - Аналогично в `prevDayMax` для симметрии (хотя prevEvents имеет фильтр `hours=not.is.null` — там null'ов и так нет).
   - `cell.review = true` сохраняется → ячейка остаётся подсвеченной как «требует проверки», и руководитель явно видит расчётный характер чисел.
 - **Backend TODO (BUG-044):** разобрать `process_events.py:claim_pending_events` и `calculate_hours` — почему пары `time_from_telegram` не пайрятся / часы не считаются. Pair-walker во frontend остаётся как защитный fallback после фикса worker'а.
+
+### BUG-045: Двойные смены теряют вечернюю смену (max вместо sum) + ночные смены через границу периода
+
+- **Файл:** `dashboard/index.html`, функции `loadTimesheet()` пара-walker и prevDayMax
+- **Приоритет:** 🟠 ВЫСОКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-05, коммит BUG-045)
+- **Описание:**
+  1. **max вместо sum:** Сотрудники с двумя сменами в день (утро ~9ч + вечер ~4-6ч) без флага `double_shift` теряли вечернюю смену — pair-walker брал `max(9, 4) = 9` вместо `9 + 4 = 13`. Затронуто минимум 7 сотрудников ежедневно (ab5b, 1ad3, fa03, 2bf6, f03f, fe92, 4681).
+  2. **Граница периода:** Ночная смена начатая в последний день периода (например Apr 30 18:04) с departure в следующем периоде (May 1 00:05) — departure выпадал за `endISO` запроса → pair-walker не мог его найти.
+- **Причина-1 (max):** Код `else if (cell.hours === null || effHours > cell.hours) { cell.hours = effHours; }` — явный `max` без обработки нескольких arrival за день без флага `double_shift`.
+- **Причина-2 (граница):** Запрос событий ограничен `photo_timestamp=gte.${startISO}&photo_timestamp=lt.${endISO}` — departure через полночь за `endISO` не попадает в выборку.
+- **Фикс-1:** `cell.hours = (cell.hours || 0) + effHours` — суммирование всех смен дня.
+- **Фикс-2:** Запрос расширен на ±18ч (`bufStartISO`, `bufEndISO`). В pair-walker добавлен guard `if (dk < days[0] || dk > days[days.length-1]) continue` — буферные события пропускаются во внешнем цикле, но доступны inner j-loop для поиска парного departure.
+- **Также:** prevDayMax аналогично исправлен с `max` на `sum` для корректного перехода часов предыдущего периода.
