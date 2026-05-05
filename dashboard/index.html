@@ -2102,6 +2102,7 @@
 
       for (const ev of evArr) {
         if (!ev.photo_timestamp || ev.hours == null) continue;
+        if (ev.event_type !== 'arrival') continue;
         const msk = new Date(new Date(ev.photo_timestamp).getTime() + 3 * 3600000);
         const key = `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
         if (!dayTotals[key]) continue;
@@ -3178,15 +3179,15 @@
         if (ev.photo_url && ev.photo_timestamp) {
           cell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
         }
-        // Двойная смена: собираем часы каждой пары по departure-событиям
+        // Двойная смена: собираем часы каждой пары по arrival-событиям
         if (flags.includes('double_shift')) {
           cell.double_shift = true;
-          if (ev.event_type === 'departure' && ev.hours != null) {
+          if (ev.event_type === 'arrival' && ev.hours != null) {
             cell.shift_hours.push(ev.hours);
           }
         } else {
-          // Обычный режим: предпочитаем событие с часами
-          if (ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
+          // Часы берём только из arrival: departure может быть в следующем дне (ночная смена)
+          if (ev.event_type === 'arrival' && ev.hours != null && (cell.hours === null || ev.hours > cell.hours)) {
             cell.hours     = ev.hours;
             cell.photo_url = ev.photo_url || cell.photo_url;
           } else if (!cell.photo_url && ev.photo_url) {
@@ -3202,6 +3203,7 @@
       const prevDayMax = {};   // `${empId}|${date}` → maxHours
       for (const ev of prevEvents || []) {
         if (!ev.employee_id || !ev.photo_timestamp || ev.hours == null) continue;
+        if (ev.event_type !== 'arrival') continue;
         const key = `${ev.employee_id}|${toMskDate(ev.photo_timestamp)}`;
         if (prevDayMax[key] == null || ev.hours > prevDayMax[key])
           prevDayMax[key] = ev.hours;

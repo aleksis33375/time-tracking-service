@@ -1251,3 +1251,18 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
 - **Причина:** Удалён fallback на `msg.date` (время сообщения Telegram). Код `photoTimestamp = stampTimestamp` оставлял поле NULL если EXIF и OCR не нашли время.
 - **Решение:** Восстановлен fallback на `new Date(msg.date * 1000).toISOString()`. Чтобы сохранить защиту от подделок, события без EXIF/OCR помечаются флагом `time_from_telegram` во `fraud_flags`. На дашборде флаг отображается серым бейджем "Время из Telegram" — руководитель видит неточные записи и может поправить вручную на вкладке Проверка.
 - **Дополнительно:** В BUG.md задокументировано как BUG-040. В PLAN.md добавлен Этап D. Данные за 4-5 мая потребуют отдельного SQL-сброса (Шаг 5 плана).
+
+---
+
+### BUG-041: Двойной счёт часов при ночных сменах — часы из departure попадают в следующий день
+
+- **Файл:** `dashboard/index.html` — функция `loadTimesheet()` (~строка 3182), `loadAnalytics()` (~строка 2103)
+- **Приоритет:** 🟠 ВЫСОКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-05)
+- **Описание:** AI-worker записывает значение `hours` в оба события пары (arrival + departure). Дашборд группировал часы по `photo_timestamp` каждого события. При ночной смене (arrival в 22:35 → departure в 00:05 следующего дня) departure-событие попадало в ячейку нового дня и добавляло туда дублирующиеся часы. Тот же баг был в Аналитике и (через `tsLastData.eMap`) в Excel-выгрузке.
+- **Причина:** Условие `if (ev.hours != null && (cell.hours === null || ev.hours > cell.hours))` не фильтровало по `event_type` — принимало часы от любого события (arrival и departure).
+- **Решение (Вариант А — только дашборд):**
+  - В `loadTimesheet()`: часы в ячейку пишутся только из `event_type === 'arrival'`. Для `double_shift` — `shift_hours` тоже из arrival.
+  - В `loadTimesheet()` prevDayMax: добавлен фильтр `event_type !== 'arrival' → continue`.
+  - В `loadAnalytics()`: добавлен фильтр `event_type !== 'arrival' → continue` перед суммированием часов.
+  - Бэкенд (`ai-worker/process_events.py`) не менялся — worker корректно записывает часы в arrival-событие, дашборд теперь читает именно оттуда.
