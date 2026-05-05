@@ -3202,12 +3202,18 @@
           // Часы атрибутируем только к дню arrival
           if (ev.event_type !== 'arrival') continue;
 
-          // Эффективные часы: arrival.hours, иначе из следующего departure этого сотрудника
+          // Эффективные часы: arrival.hours → departure.hours → расчёт по таймштампам
           let effHours = ev.hours;
+          let pairedDep = null;
           if (effHours == null) {
             for (let j = i + 1; j < evs.length; j++) {
-              if (evs[j].event_type === 'departure') { effHours = evs[j].hours; break; }
+              if (evs[j].event_type === 'departure') { pairedDep = evs[j]; effHours = pairedDep.hours; break; }
               if (evs[j].event_type === 'arrival')   break;  // новый arrival — пары нет
+            }
+            // Computed fallback: пара есть, но у обоих hours=null (worker не посчитал) → считаем по таймштампам
+            if (effHours == null && pairedDep) {
+              const diffH = (new Date(pairedDep.photo_timestamp) - new Date(ev.photo_timestamp)) / 3600000;
+              if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
             }
           }
           if (effHours == null) continue;  // одиночный arrival без часов
@@ -3239,10 +3245,15 @@
           const ev = evs[i];
           if (ev.event_type !== 'arrival') continue;
           let effHours = ev.hours;
+          let pairedDep = null;
           if (effHours == null) {
             for (let j = i + 1; j < evs.length; j++) {
-              if (evs[j].event_type === 'departure') { effHours = evs[j].hours; break; }
+              if (evs[j].event_type === 'departure') { pairedDep = evs[j]; effHours = pairedDep.hours; break; }
               if (evs[j].event_type === 'arrival')   break;
+            }
+            if (effHours == null && pairedDep) {
+              const diffH = (new Date(pairedDep.photo_timestamp) - new Date(ev.photo_timestamp)) / 3600000;
+              if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
             }
           }
           if (effHours == null) continue;

@@ -1281,3 +1281,19 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
   - В `loadTimesheet()` заменён простой цикл на pair-walker: события группируются по сотруднику, сортируются по времени, строятся пары arrival→departure. Часы атрибутируются к дню arrival. Если `arrival.hours == null` — fallback на `departure.hours` парного события.
   - `prevDayMax` переписан аналогично + добавлен `event_type` в prevEvents-запрос (там он не был выбран).
   - Бэкенд не менялся.
+- **⚠️ Не помог полностью:** верификация после деплоя показала, что у пар `time_from_telegram` `hours = NULL` стоит на ОБОИХ событиях (89 событий за 3-5 мая в БД). Pair-walker не имеет данных. Фикс продолжает работать корректно для done-пар и double_shift-пар, но для time_from_telegram отображение `?` сохраняется. См. BUG-043.
+
+---
+
+### BUG-043: Worker не записывает hours для пар с `time_from_telegram` → frontend computed fallback
+
+- **Файлы:** `dashboard/index.html` — pair-walker в `loadTimesheet()` (~строка 3205), prevDayMax (~строка 3243)
+- **Приоритет:** 🟠 ВЫСОКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО на frontend (2026-05-05). Backend остаётся открытым (BUG-044).
+- **Описание:** После BUG-040 события без точного EXIF/OCR помечаются `time_from_telegram` → needs_review. Worker для needs_review-пар не записывает `hours` ни в arrival, ни в departure (89 событий за 3-5 мая в БД с `hours=NULL`). BUG-042 pair-walker не помог — нечего читать. Фикс: дашборд считает часы из разности `photo_timestamp` парного departure и arrival с проверкой `0 < diff < 16h`.
+- **Решение:**
+  - В pair-walker `loadTimesheet()` добавлен computed fallback: если `arrival.hours == null` И `pairedDep.hours == null`, то `effHours = (pairedDep.photo_timestamp - arrival.photo_timestamp) / 3600000` округлённое до 0.01.
+  - Sanity check: `0 < diffH < 16` — фильтрует ошибочные пары (отрицательное время, смены >16ч).
+  - Аналогично в `prevDayMax` для симметрии (хотя prevEvents имеет фильтр `hours=not.is.null` — там null'ов и так нет).
+  - `cell.review = true` сохраняется → ячейка остаётся подсвеченной как «требует проверки», и руководитель явно видит расчётный характер чисел.
+- **Backend TODO (BUG-044):** разобрать `process_events.py:claim_pending_events` и `calculate_hours` — почему пары `time_from_telegram` не пайрятся / часы не считаются. Pair-walker во frontend остаётся как защитный fallback после фикса worker'а.
