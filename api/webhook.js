@@ -88,7 +88,7 @@ async function handlePhoto(msg) {
       stampTimestamp = exif;
       timeSource = 'exif';
     } else {
-      const ocr = await extractOcrTimestamp(originalBuffer, msg.date);
+      const ocr = await extractOcrTimestamp(originalBuffer);
       if (ocr) {
         stampTimestamp = ocr;
         timeSource = 'ocr';
@@ -111,27 +111,39 @@ async function handlePhoto(msg) {
     }
   }
 
-  // Если EXIF и OCR не нашли время — fallback на время сообщения Telegram (UTC, точность ±секунды).
-  // Событие помечается флагом time_from_telegram, чтобы руководитель мог проверить точность.
-  const telegramTimestamp = new Date(msg.date * 1000).toISOString();
-  const photoTimestamp    = stampTimestamp || telegramTimestamp;
-  const extraFlags        = stampTimestamp ? [] : ['time_from_telegram'];
-
   if (!stampTimestamp) {
-    await logToSupabase('warn', 'webhook-handler', 'Time taken from Telegram (no EXIF, no OCR)', {
-      chatId, messageId, name: caption.nameFromPhoto,
+    // Время из фото не найдено — msg.date (Telegram) не используется ни при каких условиях.
+    await logToSupabase('warn', 'webhook-handler',
+      'No photo timestamp (no EXIF, no OCR date+time). Event saved as needs_review.', {
+        chatId, messageId, name: caption.nameFromPhoto,
+      });
+    await insertEvent({
+      photo_url:       photoUrl,
+      photo_timestamp: null,
+      status:          'needs_review',
+      name_from_photo: caption.nameFromPhoto,
+      event_type:      caption.eventType,
+      event_type_raw:  caption.eventTypeRaw,
+      fraud_flags:     ['no_photo_time'],
     });
+    await sendTelegramReply(chatId, messageId,
+      '⚠️ Не удалось прочитать дату и время с фотографии.\n\n' +
+      'Пожалуйста, снимайте через приложение Timestamp Camera — ' +
+      'оно показывает дату и время прямо на фото.\n\n' +
+      'Пришлите фото заново.'
+    );
+    return;
   }
 
-  // Запись в events
+  // Запись в events — только время из фото
   await insertEvent({
     photo_url:       photoUrl,
-    photo_timestamp: photoTimestamp,
+    photo_timestamp: stampTimestamp,
     status:          'pending',
     name_from_photo: caption.nameFromPhoto,
     event_type:      caption.eventType,
     event_type_raw:  caption.eventTypeRaw,
-    fraud_flags:     extraFlags,
+    fraud_flags:     [],
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
@@ -139,7 +151,7 @@ async function handlePhoto(msg) {
     event:       caption.eventTypeRaw,
     photo:       photoUrl ? 'ok' : 'missing',
     time_source: timeSource,
-    photo_time:  photoTimestamp,
+    photo_time:  stampTimestamp,
   });
 }
 
@@ -264,7 +276,7 @@ async function extractExifTimestamp(buffer) {
   }
 }
 
-async function extractOcrTimestamp(buffer, msgDateUnix) {
+async function extractOcrTimestamp(buffer) {
   try {
     const meta = await sharp(buffer).metadata();
     if (!meta.width || !meta.height) return null;
@@ -277,10 +289,10 @@ async function extractOcrTimestamp(buffer, msgDateUnix) {
       .normalise()
       .toBuffer();
 
-    // OCR с жёстким таймаутом 6 сек; whitelist только цифры и двоеточия
+    // OCR с жёстким таймаутом 6 сек; whitelist: цифры, двоеточия, точки, слэш, дефис
     const ocrResult = await Promise.race([
       Tesseract.recognize(croppedBuf, 'eng', {
-        tessedit_char_whitelist: '0123456789:.',
+        tessedit_char_whitelist: '0123456789:./-',
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('OCR timeout')), 6000)
@@ -298,18 +310,29 @@ async function extractOcrTimestamp(buffer, msgDateUnix) {
     }
     const [, h, m, s] = timeMatch;
 
-    // Дата из msg.date, переведённого в московский день (UTC+3)
-    const msgMoscow = new Date(msgDateUnix * 1000 + 3 * 3600 * 1000);
-    const year  = msgMoscow.getUTCFullYear();
-    const month = msgMoscow.getUTCMonth();
-    const day   = msgMoscow.getUTCDate();
+    // Ищем дату ТОЛЬКО из штампа — msg.date (Telegram) не используется
+    const dateMatchDMY = text.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    const dateMatchYMD = text.match(/(\d{4})[-.](\d{2})[-.](\d{2})/);
 
-    // Строим московский datetime и конвертируем в UTC
-    const moscowMs = Date.UTC(year, month, day, parseInt(h), parseInt(m), parseInt(s));
+    let day, month, year;
+    if (dateMatchDMY) {
+      [, day, month, year] = dateMatchDMY;
+      console.log('OCR date (DD.MM.YYYY):', `${day}.${month}.${year}`);
+    } else if (dateMatchYMD) {
+      [, year, month, day] = dateMatchYMD;
+      console.log('OCR date (YYYY-MM-DD):', `${year}-${month}-${day}`);
+    } else {
+      console.log('OCR: date not found in stamp — cannot build timestamp without Telegram fallback');
+      return null;
+    }
+
+    // Строим МСК datetime из штампа и конвертируем в UTC
+    const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
+                               parseInt(h), parseInt(m), parseInt(s));
     const utcMs    = moscowMs - 3 * 3600 * 1000;
     const result   = new Date(utcMs).toISOString();
 
-    console.log('OCR timestamp:', result);
+    console.log('OCR timestamp (stamp only):', result);
     return result;
   } catch (err) {
     console.warn('OCR failed:', err.message);
@@ -396,6 +419,22 @@ async function logToSupabase(level, source, message, meta = {}) {
     });
   } catch (err) {
     console.error('logToSupabase failed:', err);
+  }
+}
+
+async function sendTelegramReply(chatId, replyToMessageId, text) {
+  try {
+    await fetch(`${TG_API}/sendMessage`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        chat_id:             chatId,
+        reply_to_message_id: replyToMessageId,
+        text,
+      }),
+    });
+  } catch (err) {
+    console.warn('sendTelegramReply failed:', err.message);
   }
 }
 

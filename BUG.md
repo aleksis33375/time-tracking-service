@@ -1314,3 +1314,23 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
 - **Фикс-5 (2026-05-06):** Pair-walker переведён на **всегда computed** (timestamps пары), не зависит от `arrival.hours` от ai-worker'а. Корень: worker записывал в `arrival.hours` значение 0 когда не мог найти пару (departure уходило за его временное окно) → inner-loop старого кода не запускался → подработка через границу периода терялась. Теперь: всегда ищем paired departure в `evs` (включая buffer ±18ч), считаем `diffH`, fallback на `ev.hours` только для одиночных arrivals без пары.
 - **Фикс-6 (2026-05-06):** Photo attribution исправлена: фото departure теперь привязывается к дню его paired arrival (pre-pass map `depTargetDk`). Ранее уход 00:05 1 мая показывался в попапе 1 мая вместо 30 апр.
 - **BUG-046 (закрыт):** Gap <5 мин между сменой и подработкой — не артефакт, а нормальный рабочий паттерн.
+
+---
+
+### BUG-047: Telegram msg.date использовался как fallback для photo_timestamp
+
+- **Файл:** `api/webhook.js` — функции `extractOcrTimestamp()`, `handlePhoto()`
+- **Приоритет:** 🔴 КРИТИЧЕСКИЙ
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-07)
+
+**Описание:**
+OCR функция `extractOcrTimestamp(buffer, msgDateUnix)` читала только время (`HH:MM:SS`) из штампа Timestamp Camera, а дату брала из `msg.date` (время доставки сообщения в Telegram, UTC). Если OCR и EXIF оба не срабатывали — `handlePhoto()` использовал `msg.date` как финальный fallback (`photo_timestamp = stampTimestamp || telegramTimestamp`), помечая событие флагом `time_from_telegram`.
+
+**Проблема:** `msg.date` — это время сервера Telegram, не время съёмки. Может расходиться с реальным временем на часы (отложенная отправка, офлайн-режим). Система показывала неверное время даже при корректном штампе, если OCR читал только время без даты.
+
+**Решение:**
+1. `extractOcrTimestamp` теперь не принимает `msgDateUnix`. Дата извлекается ТОЛЬКО из штампа (regex DD.MM.YYYY или YYYY-MM-DD). Если дата не найдена — возвращает `null`.
+2. Убран fallback на `telegramTimestamp` из `handlePhoto()`.
+3. Если ни EXIF, ни OCR не дали результат — событие сохраняется с `photo_timestamp=null`, `status='needs_review'`, `fraud_flags=['no_photo_time']`. Бот немедленно отвечает работнику с просьбой переснять через Timestamp Camera.
+4. Dashboard: добавлена метка «Время не распознано» (красная) для флага `no_photo_time`.
+5. **BUG-044 закрыт как неактуальный** — worker не обрабатывает `needs_review` события, новых `time_from_telegram` событий больше не будет.
