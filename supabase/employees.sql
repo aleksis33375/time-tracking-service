@@ -11,6 +11,7 @@ create table public.employees (
   hourly_rate      numeric(10,4) generated always as (daily_rate / 8) stored,
   face_embedding   vector(128),
   ref_photo_url    text,
+  aliases          text[]        default '{}',
   deleted_at       timestamptz   default null,
   created_at       timestamptz   not null default now()
 );

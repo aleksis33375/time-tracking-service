@@ -214,13 +214,19 @@ def find_employee_by_name(name: str) -> dict | None:
     # Загружаем всех активных сотрудников один раз
     all_employees = sb_get(
         "/rest/v1/employees",
-        "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url",
+        "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url,aliases",
     )
     if not isinstance(all_employees, list) or not all_employees:
         return None
 
     name_lower    = name_clean.lower()
     name_for_match = _clean_name(name_clean)   # без слов типа события
+
+    # Шаг 1.4 — точное совпадение с aliases (никнеймы: «Саша» → «Петрукович Александр»)
+    for emp in all_employees:
+        emp_aliases = emp.get("aliases") or []
+        if any(a.lower() == name_lower for a in emp_aliases):
+            return emp
 
     # Шаг 1.5/1.6 — однозначная подстрока (оригинал, затем очищенное имя)
     for candidate in dict.fromkeys([name_lower, name_for_match]):  # уникальные, по порядку

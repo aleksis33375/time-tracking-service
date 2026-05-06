@@ -940,7 +940,7 @@ const key = ev.employee_id || '_unknown';
 
 **Файл:** `ai-worker/process_events.py` (`find_employee_by_name`)  
 **Приоритет:** 🟠 ВЫСОКИЙ  
-**Статус:** ❌ Не исправлено  
+**Статус:** ✅ ИСПРАВЛЕНО (2026-05-07)  
 
 **Описание:**
 
@@ -955,23 +955,12 @@ const key = ev.employee_id || '_unknown';
 - Сотрудник не идентифицирован, рабочее время не учтено автоматически
 - Каждый раз требует ручной корректировки в дашборде
 
-**Решение:**
-Добавить в таблицу `employees` поле `aliases` (массив строк) — список прозвищ/коротких имён. В `find_employee_by_name` добавить проверку по aliases до fuzzy-матча.
-
-```sql
-ALTER TABLE employees ADD COLUMN aliases text[] DEFAULT '{}';
--- Пример: UPDATE employees SET aliases = '{"Тоха"}' WHERE display_name = 'Зокиров Тохир';
-```
-
-```python
-# В find_employee_by_name, шаг 1.4 (после substring, перед fuzzy):
-alias_matches = [
-    emp for emp in all_employees
-    if name_lower in [a.lower() for a in (emp.get("aliases") or [])]
-]
-if len(alias_matches) == 1:
-    return alias_matches[0]
-```
+**Решение (реализовано 2026-05-07):**
+- Добавлена колонка `aliases text[] DEFAULT '{}'` в таблицу `employees`
+- В `find_employee_by_name` добавлен шаг 1.4: точное совпадение с aliases (без учёта регистра), до substring/fuzzy-шагов
+- В дашборде Сотрудники → Редактировать появилось поле «Никнеймы» (через запятую)
+- SQL миграция: `supabase/migration_aliases.sql` — выполнить в Supabase SQL Editor
+- Конкретный кейс: «Саша» → alias для «Петрукович Александр»
 
 ---
 

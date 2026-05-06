@@ -978,6 +978,11 @@
           <input class="input" type="text" id="emp-form-name" placeholder="Как написано на фото (напр. «Дима»)">
           <div style="font-size:12px;color:var(--muted);margin-top:4px;">Должно совпадать с подписью на фото из Telegram</div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Никнеймы</label>
+          <input class="input" type="text" id="emp-form-aliases" placeholder="Саша, Шура, Петрукович">
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Альтернативные подписи через запятую — система будет матчить их на этого сотрудника</div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Должность</label>
@@ -2706,6 +2711,7 @@
       document.getElementById('emp-form-team').value     = '';
       document.getElementById('emp-form-rate').value     = '';
       document.getElementById('emp-form-hourly').value   = '';
+      document.getElementById('emp-form-aliases').value  = '';
       document.getElementById('emp-form-error').style.display = 'none';
       document.getElementById('emp-modal-title').textContent  = 'Новый сотрудник';
       document.getElementById('emp-save-btn').textContent     = 'Добавить';
@@ -2723,6 +2729,7 @@
       document.getElementById('emp-form-team').value     = emp.team || '';
       document.getElementById('emp-form-rate').value     = emp.daily_rate || '';
       document.getElementById('emp-form-hourly').value   = emp.daily_rate ? (emp.daily_rate / 8).toFixed(2) : '';
+      document.getElementById('emp-form-aliases').value  = (emp.aliases || []).join(', ');
       document.getElementById('emp-form-error').style.display = 'none';
       document.getElementById('emp-modal-title').textContent  = 'Редактировать сотрудника';
       document.getElementById('emp-save-btn').textContent     = 'Сохранить';
@@ -2762,7 +2769,9 @@
       const origText = btn.textContent;
       btn.innerHTML = '<span class="spinner spinner-sm"></span>';
 
-      const body = { display_name: name, position: position || null, team: team || null, daily_rate };
+      const aliasesRaw = document.getElementById('emp-form-aliases').value;
+      const aliases = aliasesRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const body = { display_name: name, position: position || null, team: team || null, daily_rate, aliases };
       let savedId = id;
 
       if (id) {
