@@ -3217,9 +3217,11 @@
               if (evs[j].event_type === 'departure') { pairedDep = evs[j]; effHours = pairedDep.hours; break; }
               if (evs[j].event_type === 'arrival')   break;  // новый arrival — пары нет
             }
-            // Computed fallback: пара есть, но у обоих hours=null (worker не посчитал) → считаем по таймштампам
+            // Computed fallback: пара есть, но у обоих hours=null → считаем по таймштампам (truncate до минут)
             if (effHours == null && pairedDep) {
-              const diffH = (new Date(pairedDep.photo_timestamp) - new Date(ev.photo_timestamp)) / 3600000;
+              const t1 = Math.floor(new Date(ev.photo_timestamp).getTime() / 60000) * 60000;
+              const t2 = Math.floor(new Date(pairedDep.photo_timestamp).getTime() / 60000) * 60000;
+              const diffH = (t2 - t1) / 3600000;
               if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
             }
           }
@@ -3228,8 +3230,8 @@
           if (flags.includes('double_shift')) {
             cell.double_shift = true;
             cell.shift_hours.push(effHours);
-          } else {
-            cell.hours = (cell.hours || 0) + effHours;  // сумма всех смен дня, не max
+          } else if (cell.hours === null || effHours > cell.hours) {
+            cell.hours     = effHours;
             cell.photo_url = ev.photo_url || cell.photo_url;
           }
         }
@@ -3259,13 +3261,15 @@
               if (evs[j].event_type === 'arrival')   break;
             }
             if (effHours == null && pairedDep) {
-              const diffH = (new Date(pairedDep.photo_timestamp) - new Date(ev.photo_timestamp)) / 3600000;
+              const t1 = Math.floor(new Date(ev.photo_timestamp).getTime() / 60000) * 60000;
+              const t2 = Math.floor(new Date(pairedDep.photo_timestamp).getTime() / 60000) * 60000;
+              const diffH = (t2 - t1) / 3600000;
               if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
             }
           }
           if (effHours == null) continue;
           const key = `${empId}|${toMskDate(ev.photo_timestamp)}`;
-          prevDayMax[key] = (prevDayMax[key] || 0) + effHours;  // сумма смен, не max
+          if (prevDayMax[key] == null || effHours > prevDayMax[key]) prevDayMax[key] = effHours;
         }
       }
       const prevMap = {};   // empId → totalHours прошлого периода
@@ -3364,7 +3368,7 @@
                 ? 'background:var(--danger-bg);color:var(--danger);font-weight:600;'
                 : wkndStyle;
               const warn = cell.fraud ? ' ⚠️' : '';
-              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${cell.hours}${warn}</td>`;
+              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${Math.round(cell.hours*100)/100}${warn}</td>`;
             }
             // Событие есть, но часы не посчитаны (неполный день)
             return `<td class="ts-day" style="${wkndStyle}background:var(--warn-bg);color:var(--warning);"${photoAttr}>?</td>`;

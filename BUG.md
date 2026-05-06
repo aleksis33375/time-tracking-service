@@ -1298,16 +1298,17 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
   - `cell.review = true` сохраняется → ячейка остаётся подсвеченной как «требует проверки», и руководитель явно видит расчётный характер чисел.
 - **Backend TODO (BUG-044):** разобрать `process_events.py:claim_pending_events` и `calculate_hours` — почему пары `time_from_telegram` не пайрятся / часы не считаются. Pair-walker во frontend остаётся как защитный fallback после фикса worker'а.
 
-### BUG-045: Двойные смены теряют вечернюю смену (max вместо sum) + ночные смены через границу периода
+### BUG-045: Floating-point мусор в ячейках Табеля + граница периода для ночных смен
 
-- **Файл:** `dashboard/index.html`, функции `loadTimesheet()` пара-walker и prevDayMax
+- **Файл:** `dashboard/index.html`, функции `loadTimesheet()` pair-walker, `renderTimesheetTable()`
 - **Приоритет:** 🟠 ВЫСОКИЙ
-- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-05, коммит BUG-045)
+- **Статус:** ✅ ИСПРАВЛЕНО (2026-05-06)
 - **Описание:**
-  1. **max вместо sum:** Сотрудники с двумя сменами в день (утро ~9ч + вечер ~4-6ч) без флага `double_shift` теряли вечернюю смену — pair-walker брал `max(9, 4) = 9` вместо `9 + 4 = 13`. Затронуто минимум 7 сотрудников ежедневно (ab5b, 1ad3, fa03, 2bf6, f03f, fe92, 4681).
-  2. **Граница периода:** Ночная смена начатая в последний день периода (например Apr 30 18:04) с departure в следующем периоде (May 1 00:05) — departure выпадал за `endISO` запроса → pair-walker не мог его найти.
-- **Причина-1 (max):** Код `else if (cell.hours === null || effHours > cell.hours) { cell.hours = effHours; }` — явный `max` без обработки нескольких arrival за день без флага `double_shift`.
-- **Причина-2 (граница):** Запрос событий ограничен `photo_timestamp=gte.${startISO}&photo_timestamp=lt.${endISO}` — departure через полночь за `endISO` не попадает в выборку.
-- **Фикс-1:** `cell.hours = (cell.hours || 0) + effHours` — суммирование всех смен дня.
-- **Фикс-2:** Запрос расширен на ±18ч (`bufStartISO`, `bufEndISO`). В pair-walker добавлен guard `if (dk < days[0] || dk > days[days.length-1]) continue` — буферные события пропускаются во внешнем цикле, но доступны inner j-loop для поиска парного departure.
-- **Также:** prevDayMax аналогично исправлен с `max` на `sum` для корректного перехода часов предыдущего периода.
+  1. **FP-мусор в display:** `cell.hours` выводился без округления — JS FP-ошибки давали `15.299999999999999` вместо `15.30`.
+  2. **Граница периода:** Ночная смена с arrival в конце периода (Apr 30 18:04) и departure в следующем периоде (May 1 00:05) — departure выпадал за `endISO` → pair-walker не находил пару.
+  3. **Computed fallback игнорировал секунды:** `12:34:45` vs `12:34:00` давал дробные минуты в вычисленных часах.
+- **Фикс-1:** В `renderTimesheetTable`: `${Math.round(cell.hours*100)/100}` — отображение всегда округлено до 2 знаков.
+- **Фикс-2:** Запрос событий расширен на ±18ч (`bufStartISO/bufEndISO`). В pair-walker guard `if (dk < days[0] || dk > days[days.length-1]) continue` — buffer-события пропускаются в outer-loop, но доступны inner j-loop для поиска paired departure.
+- **Фикс-3:** В обоих computed fallback'ах truncate секунд перед вычислением diff: `Math.floor(ts / 60000) * 60000`.
+- **Логика max:** Намеренно **оставлена** как `else if (cell.hours === null || effHours > cell.hours)`. Многие сотрудники имеют паттерн «departure 18:02 → arrival 18:04» с gap 1–3 мин — это артефакты регистрации, а не реальные двойные смены. Реальные двойные смены обрабатываются через `double_shift`-флаг (отдельная ветка → `cell.shift_hours`).
+- **BUG-046 (открыт):** Worker создаёт пары с gap <5 мин для одного сотрудника — нужна фильтрация в `process_events.py`.
