@@ -1310,5 +1310,5 @@ GitHub → Actions → "AI Worker — Process Events" → **Run workflow** → R
 - **Фикс-1:** В `renderTimesheetTable`: `${Math.round(cell.hours*100)/100}` — отображение всегда округлено до 2 знаков.
 - **Фикс-2:** Запрос событий расширен на ±18ч (`bufStartISO/bufEndISO`). В pair-walker guard `if (dk < days[0] || dk > days[days.length-1]) continue` — buffer-события пропускаются в outer-loop, но доступны inner j-loop для поиска paired departure.
 - **Фикс-3:** В обоих computed fallback'ах truncate секунд перед вычислением diff: `Math.floor(ts / 60000) * 60000`.
-- **Логика max:** Намеренно **оставлена** как `else if (cell.hours === null || effHours > cell.hours)`. Многие сотрудники имеют паттерн «departure 18:02 → arrival 18:04» с gap 1–3 мин — это артефакты регистрации, а не реальные двойные смены. Реальные двойные смены обрабатываются через `double_shift`-флаг (отдельная ветка → `cell.shift_hours`).
-- **BUG-046 (открыт):** Worker создаёт пары с gap <5 мин для одного сотрудника — нужна фильтрация в `process_events.py`.
+- **Фикс-4 (2026-05-06):** Логика pair-walker исправлена на **sum** вместо max. Бизнес-логика: у каждого работника может быть смена (arrival+departure) + подработка (ещё arrival+departure) с gap 1–3 мин между ними — это норма. Итог дня = смена + подработка. `cell.hours = (cell.hours || 0) + effHours`; аналогично `prevDayMax`. Вещественные ошибки при сложении устраняются уже имеющимся `Math.round(x*100)/100` в render.
+- **BUG-046 (закрыт):** Gap <5 мин между сменой и подработкой — не артефакт, а нормальный рабочий паттерн.

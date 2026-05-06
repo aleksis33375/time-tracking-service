@@ -3230,8 +3230,8 @@
           if (flags.includes('double_shift')) {
             cell.double_shift = true;
             cell.shift_hours.push(effHours);
-          } else if (cell.hours === null || effHours > cell.hours) {
-            cell.hours     = effHours;
+          } else {
+            cell.hours = (cell.hours || 0) + effHours;
             cell.photo_url = ev.photo_url || cell.photo_url;
           }
         }
@@ -3269,7 +3269,7 @@
           }
           if (effHours == null) continue;
           const key = `${empId}|${toMskDate(ev.photo_timestamp)}`;
-          if (prevDayMax[key] == null || effHours > prevDayMax[key]) prevDayMax[key] = effHours;
+          prevDayMax[key] = (prevDayMax[key] || 0) + effHours;
         }
       }
       const prevMap = {};   // empId → totalHours прошлого периода
