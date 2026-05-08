@@ -126,12 +126,6 @@ async function handlePhoto(msg) {
       event_type_raw:  caption.eventTypeRaw,
       fraud_flags:     ['no_photo_time'],
     });
-    await sendTelegramReply(chatId, messageId,
-      '⚠️ Не удалось прочитать дату и время с фотографии.\n\n' +
-      'Пожалуйста, снимайте через приложение Timestamp Camera — ' +
-      'оно показывает дату и время прямо на фото.\n\n' +
-      'Пришлите фото заново.'
-    );
     return;
   }
 
@@ -281,7 +275,6 @@ async function extractOcrTimestamp(buffer) {
     const meta = await sharp(buffer).metadata();
     if (!meta.width || !meta.height) return null;
 
-    // Кроп нижних 28% — там находится штамп времени
     const cropTop    = Math.floor(meta.height * 0.72);
     const croppedBuf = await sharp(buffer)
       .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
@@ -289,50 +282,80 @@ async function extractOcrTimestamp(buffer) {
       .normalise()
       .toBuffer();
 
-    // OCR с жёстким таймаутом 6 сек; whitelist: цифры, двоеточия, точки, слэш, дефис
-    const ocrResult = await Promise.race([
+    // Проход 1: только цифры — для времени и числовой даты (07.05.2026, 2026-05-07)
+    const ocrNum = await Promise.race([
       Tesseract.recognize(croppedBuf, 'eng', {
         tessedit_char_whitelist: '0123456789:./-',
       }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('OCR timeout')), 6000)
-      ),
-    ]);
+      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 6000)),
+    ]).catch(() => null);
 
-    const text = ocrResult.data.text;
-    console.log('OCR raw:', text.trim());
+    const numText = ocrNum?.data?.text || '';
+    console.log('OCR num:', numText.trim());
 
-    // Ищем паттерн HH:MM:SS
-    const timeMatch = text.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+    // Время — всегда из числового прохода
+    const timeMatch = numText.match(/(\d{1,2}):(\d{2}):(\d{2})/);
     if (!timeMatch) {
       console.log('OCR: time pattern not found');
       return null;
     }
     const [, h, m, s] = timeMatch;
 
-    // Ищем дату ТОЛЬКО из штампа — msg.date (Telegram) не используется
-    const dateMatchDMY = text.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
-    const dateMatchYMD = text.match(/(\d{4})[-.](\d{2})[-.](\d{2})/);
+    // Дата — числовые форматы (07.05.2026, 07/05/2026, 2026-05-07)
+    const dateMatchDMY = numText.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    const dateMatchYMD = numText.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
 
     let day, month, year;
+
     if (dateMatchDMY) {
       [, day, month, year] = dateMatchDMY;
-      console.log('OCR date (DD.MM.YYYY):', `${day}.${month}.${year}`);
+      console.log('OCR date (numeric DMY):', `${day}.${month}.${year}`);
     } else if (dateMatchYMD) {
       [, year, month, day] = dateMatchYMD;
-      console.log('OCR date (YYYY-MM-DD):', `${year}-${month}-${day}`);
+      console.log('OCR date (numeric YMD):', `${year}-${month}-${day}`);
     } else {
-      console.log('OCR: date not found in stamp — cannot build timestamp without Telegram fallback');
+      // Проход 2: русские/английские месяцы («7 мая 2026», «7 May 2026»)
+      console.log('OCR: numeric date not found, trying month-name pass...');
+      const ocrRus = await Promise.race([
+        Tesseract.recognize(croppedBuf, 'rus+eng'),
+        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 5000)),
+      ]).catch(() => null);
+
+      const rusText = ocrRus?.data?.text || '';
+      console.log('OCR rus:', rusText.trim());
+
+      const RU_MONTHS = {
+        'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,
+        'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12,
+      };
+      const EN_MONTHS = {
+        'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+        'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
+      };
+
+      const mMatch = rusText.match(/(\d{1,2})\s+([а-яёa-z]{3,})[а-яёa-z]*\.?\s+(\d{4})/i);
+      if (mMatch) {
+        const key  = mMatch[2].toLowerCase().slice(0, 3);
+        const mNum = RU_MONTHS[key] || EN_MONTHS[key];
+        if (mNum) {
+          day   = mMatch[1];
+          month = String(mNum);
+          year  = mMatch[3];
+          console.log('OCR date (month name):', `${day} ${mMatch[2]} ${year}`);
+        }
+      }
+    }
+
+    if (!day || !month || !year) {
+      console.log('OCR: date not found in stamp');
       return null;
     }
 
-    // Строим МСК datetime из штампа и конвертируем в UTC
     const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
                                parseInt(h), parseInt(m), parseInt(s));
     const utcMs    = moscowMs - 3 * 3600 * 1000;
     const result   = new Date(utcMs).toISOString();
-
-    console.log('OCR timestamp (stamp only):', result);
+    console.log('OCR timestamp:', result);
     return result;
   } catch (err) {
     console.warn('OCR failed:', err.message);
@@ -419,22 +442,6 @@ async function logToSupabase(level, source, message, meta = {}) {
     });
   } catch (err) {
     console.error('logToSupabase failed:', err);
-  }
-}
-
-async function sendTelegramReply(chatId, replyToMessageId, text) {
-  try {
-    await fetch(`${TG_API}/sendMessage`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        chat_id:             chatId,
-        reply_to_message_id: replyToMessageId,
-        text,
-      }),
-    });
-  } catch (err) {
-    console.warn('sendTelegramReply failed:', err.message);
   }
 }
 
