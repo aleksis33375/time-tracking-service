@@ -189,7 +189,7 @@ if ref_embedding.shape != (128,):
 
 - **Файл:** `ai-worker/process_events.py:176-186`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** Нет timeout для `face_recognition.face_encodings()`. Может зависнуть на больших фото. GitHub Actions timeout = 8 мин.
 - **Решение:** Добавить timeout (SIGALRM или asyncio.wait_for).
 

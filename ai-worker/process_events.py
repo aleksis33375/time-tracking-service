@@ -7,6 +7,7 @@ import re
 import json
 import signal
 import tempfile
+import functools
 import requests
 import difflib
 import numpy as np
@@ -39,6 +40,7 @@ def timeout_handler(signum, frame):
 
 def with_timeout(seconds):
     def decorator(func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(seconds)
