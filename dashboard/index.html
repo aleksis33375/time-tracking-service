@@ -1483,7 +1483,7 @@
           : 'done';
         let [statusHtml, rowBg] = STATUS_LABEL[worstStatus] || ['—', ''];
         if (worstStatus === 'needs_review') {
-          statusHtml = `<button onclick="goTo('review',{highlightEmployeeId:'${eid}'})" style="background:none;border:none;padding:0;color:var(--danger);font-weight:600;cursor:pointer;">⚠ Проверить</button>`;
+          statusHtml = `<button onclick="goTo('review',${JSON.stringify({highlightEmployeeId: eid})})" style="background:none;border:none;padding:0;color:var(--danger);font-weight:600;cursor:pointer;">⚠ Проверить</button>`;
         }
         const hoursHtml = slot.hours != null ? `<strong>${slot.hours.toFixed(1)}</strong>` : '—';
         const fraudHtml = slot.frauds.length ? ` <span title="${slot.frauds.join(', ')}" style="cursor:default;">⚠️</span>` : '';

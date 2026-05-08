@@ -88,7 +88,7 @@ if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
 
 - **Файл:** `dashboard/index.html:1486`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `name_from_photo` из Telegram caption без JS-экранирования. Подпись `');alert(1);//` ломает `onclick="goTo('review',{highlightEmployeeId:'${eid}'})"`.
 - **Решение:**
 ```js
