@@ -1726,6 +1726,8 @@
       const blobUrl = await getSignedUrl(photoUrl);
       if (!blobUrl) return;
       window.open(blobUrl, '_blank');
+      // BUG-040: revoke после задержки — новая вкладка успевает загрузить blob
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     }
 
     /* ─── Review / Manual correction ───────────────────────────────────── */
@@ -2780,6 +2782,11 @@
     }
 
     function resetEmpPhotoUI() {
+      // BUG-040: revoke preview blob URL перед сбросом
+      if (window._empPreviewBlobUrl) {
+        URL.revokeObjectURL(window._empPreviewBlobUrl);
+        window._empPreviewBlobUrl = null;
+      }
       const preview = document.getElementById('emp-photo-preview');
       preview.innerHTML = '👤';
       preview.style.border = '2px dashed var(--border)';
@@ -2791,8 +2798,13 @@
     function empPhotoSelected(input) {
       const file = input.files[0];
       if (!file) return;
+      // BUG-040: revoke предыдущий blob перед созданием нового
+      if (window._empPreviewBlobUrl) {
+        URL.revokeObjectURL(window._empPreviewBlobUrl);
+      }
       window._empPhotoFile = file;
       const url = URL.createObjectURL(file);
+      window._empPreviewBlobUrl = url;
       const preview = document.getElementById('emp-photo-preview');
       preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
       preview.style.border = '2px solid var(--accent)';
@@ -2853,6 +2865,7 @@
       if (emp.ref_photo_url) {
         const signedUrl = await getSignedUrl(emp.ref_photo_url);
         if (signedUrl) {
+          window._empPreviewBlobUrl = signedUrl; // BUG-040: tracked for revoke in resetEmpPhotoUI
           const preview = document.getElementById('emp-photo-preview');
           preview.innerHTML = `<img src="${signedUrl}" style="width:100%;height:100%;object-fit:cover;">`;
           preview.style.border = '2px solid var(--border)';
