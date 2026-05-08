@@ -729,7 +729,10 @@
           <div class="page-title">Ручная корректировка</div>
           <div class="page-sub" id="rv-sub">Загрузка...</div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="loadReview()">↺ Обновить</button>
+        <div style="display:flex;gap:8px;">
+          <button id="rv-approve-all-btn" class="btn btn-sm" style="background:#16A34A;color:#fff;border:none;display:none;" onclick="approveAllReview()">✓ Одобрить всё</button>
+          <button class="btn btn-outline btn-sm" onclick="loadReview()">↺ Обновить</button>
+        </div>
       </div>
 
       <!-- Фильтры -->
@@ -1718,7 +1721,8 @@
 
     /* ─── Review / Manual correction ───────────────────────────────────── */
     let rvRawRows = [];
-    let rvEmpList = [];   // [{id, display_name, team}]
+    let rvEmpList = [];
+    let rvRegularRows = [];
 
     async function loadReview() {
       document.getElementById('rv-loading').style.display    = '';
@@ -1773,13 +1777,18 @@
       const hasDs      = dsRows.length > 0;
       const hasRegular = regularRows.length > 0;
 
+      rvRegularRows = regularRows;
+      const approveAllBtn = document.getElementById('rv-approve-all-btn');
+
       if (!rows.length) {
         document.getElementById('rv-empty').style.display      = '';
         document.getElementById('rv-ds-cards').style.display   = 'none';
         document.getElementById('rv-table-wrap').style.display = 'none';
+        if (approveAllBtn) approveAllBtn.style.display = 'none';
         return;
       }
       document.getElementById('rv-empty').style.display = 'none';
+      if (approveAllBtn) approveAllBtn.style.display = regularRows.length ? '' : 'none';
 
       // Карта сотрудников
       const empMap = {};
@@ -1939,6 +1948,18 @@
         }));
       }
       await Promise.all(promises);
+      loadReview();
+    }
+
+    async function approveAllReview() {
+      const ids = rvRegularRows.map(ev => ev.id);
+      if (!ids.length) return;
+      if (!confirm(`Одобрить все ${ids.length} записей? Статус будет выставлен «done», флаги сброшены.`)) return;
+      const btn = document.getElementById('rv-approve-all-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Одобряем...'; }
+      await supabaseFetch(`/rest/v1/events?id=in.(${ids.join(',')})`, {
+        method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
+      });
       loadReview();
     }
 
