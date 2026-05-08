@@ -1129,7 +1129,7 @@
     }
 
     async function supabaseFetch(path, options = {}) {
-      const token = localStorage.getItem('sb_token');
+      const token = getToken();
       try {
         const res = await fetch(`${SUPABASE_URL}${path}`, {
           ...options,
@@ -1194,13 +1194,13 @@
       if (!data) return null;
       if (data.error) {
         if (data.status === 401) {
-          localStorage.removeItem('sb_token');
+          removeToken();
           showAuth();
         }
         return null;
       }
       if (data && (data.message === 'JWT expired' || data.code === 'PGRST301')) {
-        localStorage.removeItem('sb_token');
+        removeToken();
         showAuth();
         return null;
       }
@@ -1217,6 +1217,11 @@
       catch { console.warn('localStorage unavailable'); }
     }
 
+    function removeToken() {
+      try { localStorage.removeItem('sb_token'); }
+      catch { /* приватный режим — игнорируем */ }
+    }
+
     function isTokenExpired(token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -1227,7 +1232,7 @@
     function checkTokenExpiry() {
       const token = getToken();
       if (token && isTokenExpired(token)) {
-        localStorage.removeItem('sb_token');
+        removeToken();
         showAuth();
         return false;
       }
@@ -1298,7 +1303,7 @@
 
     async function signOut() {
       await supabasePost('/auth/v1/logout', {});
-      localStorage.removeItem('sb_token');
+      removeToken();
       showAuth();
     }
 
@@ -3613,7 +3618,7 @@
         showApp();
         loadOverview();
       } else {
-        localStorage.removeItem('sb_token');
+        removeToken();
         showAuth();
       }
     })();
