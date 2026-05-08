@@ -2954,7 +2954,7 @@
           ${ev.signedUrl
             ? `<img src="${ev.signedUrl}" alt="">`
             : '<div class="tip-photo-no">Нет фото</div>'}
-          <span class="tip-type">${TYPE[ev.type] || ev.type}</span>
+          <span class="tip-type">${TYPE[ev.type] || escHtml(ev.type)}</span>
           <span class="tip-time">${fmtTs(ev.ts)}</span>
         </div>`).join('')}
       </div>`;

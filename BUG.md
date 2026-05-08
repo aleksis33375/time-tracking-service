@@ -114,7 +114,7 @@ onclick="archiveEmployee('${emp.id}',${JSON.stringify(emp.display_name)})"
 
 - **Файл:** `dashboard/index.html:2952-2958`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `${TYPE[ev.type] || ev.type}` вставляется в HTML без экранирования. Может содержать `<img onerror=...>`.
 - **Решение:**
 ```js
