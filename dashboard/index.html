@@ -729,7 +729,8 @@
           <div class="page-title">Ручная корректировка</div>
           <div class="page-sub" id="rv-sub">Загрузка...</div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:11px;color:var(--muted);">↻ каждые 30 с</span>
           <button id="rv-approve-all-btn" class="btn btn-sm" style="background:#16A34A;color:#fff;border:none;display:none;" onclick="approveAllReview()">✓ Одобрить всё</button>
           <button class="btn btn-outline btn-sm" onclick="loadReview()">↺ Обновить</button>
         </div>
@@ -1382,7 +1383,8 @@
       if (page === 'employees')  loadEmployees();
       if (page === 'timesheet')  loadTimesheet();
       if (page === 'attendance') { attInitDate(); loadAttendance(); }
-      if (page === 'review')     loadReview();
+      if (page === 'review')     { loadReview(); clearInterval(rvRefreshTimer); rvRefreshTimer = setInterval(loadReview, 30000); }
+      if (page !== 'review')     { clearInterval(rvRefreshTimer); rvRefreshTimer = null; }
       if (page === 'analytics')  loadAnalytics();
       if (page === 'logs')       loadLogs(true);
       if (page !== 'logs')       { clearInterval(lgRefreshTimer); if (document.getElementById('lg-autorefresh')) document.getElementById('lg-autorefresh').checked = false; }
@@ -1723,6 +1725,7 @@
     let rvRawRows = [];
     let rvEmpList = [];
     let rvRegularRows = [];
+    let rvRefreshTimer = null;
 
     async function loadReview() {
       document.getElementById('rv-loading').style.display    = '';
