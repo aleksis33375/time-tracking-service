@@ -404,6 +404,7 @@ FACE_TIMEOUT = 25
 ### BUG-029: Sequential PATCH вместо batch
 
 - **Файл:** `dashboard/index.html:1855`
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** confirmDoubleShift отправляет 4 запроса последовательно вместо 1 batch.
 
 ---

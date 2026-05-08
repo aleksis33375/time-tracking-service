@@ -1911,11 +1911,10 @@
         .filter(ev => ev.employee_id === empId && rvMskDate(ev.photo_timestamp) === dateKey
                    && parseFraudFlags(ev.fraud_flags).includes('double_shift'))
         .map(ev => ev.id);
-      for (const id of ids) {
-        await supabaseFetch(`/rest/v1/events?id=eq.${id}`, {
-          method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
-        });
-      }
+      if (!ids.length) return;
+      await supabaseFetch(`/rest/v1/events?id=in.(${ids.join(',')})`, {
+        method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
+      });
       loadReview();
     }
 
@@ -1926,19 +1925,20 @@
         .sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
       const arrivals   = evs.filter(e => e.event_type === 'arrival');
       const departures = evs.filter(e => e.event_type === 'departure');
-      // Первая пара → done, вторая пара → rejected
       const toApprove = [arrivals[0], departures[0]].filter(Boolean);
       const toReject  = [arrivals[1], departures[1]].filter(Boolean);
-      for (const ev of toApprove) {
-        await supabaseFetch(`/rest/v1/events?id=eq.${ev.id}`, {
+      const promises = [];
+      if (toApprove.length) {
+        promises.push(supabaseFetch(`/rest/v1/events?id=in.(${toApprove.map(e => e.id).join(',')})`, {
           method: 'PATCH', body: JSON.stringify({ status: 'done', fraud_flags: [] }),
-        });
+        }));
       }
-      for (const ev of toReject) {
-        await supabaseFetch(`/rest/v1/events?id=eq.${ev.id}`, {
+      if (toReject.length) {
+        promises.push(supabaseFetch(`/rest/v1/events?id=in.(${toReject.map(e => e.id).join(',')})`, {
           method: 'PATCH', body: JSON.stringify({ status: 'rejected', fraud_flags: ['double_shift'] }),
-        });
+        }));
       }
+      await Promise.all(promises);
       loadReview();
     }
 
