@@ -378,14 +378,11 @@ FACE_TIMEOUT = 25
 
 ### BUG-027: Pillow 10.4.0 содержит CVE
 
-- **Файл:** `ai-worker/requirements-worker.txt`
+- **Файл:** `ai-worker/requirements-worker.txt`, `ai-worker/requirements-embedding.txt`
 - **Приоритет:** 🟠 ВЫСОКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** Устаревшая версия с известными уязвимостями.
-- **Решение:**
-```
-Pillow==11.2.1
-```
+- **Решение:** Обновлено до `Pillow==11.2.1` в обоих requirements-файлах.
 
 ---
 
