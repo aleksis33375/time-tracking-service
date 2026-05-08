@@ -2834,14 +2834,18 @@
         btn.innerHTML = '<span class="spinner spinner-sm"></span> Фото...';
         try {
           const photoPath = await uploadRefPhoto(savedId, window._empPhotoFile);
-          if (!photoPath) {
-            errEl.textContent = 'Ошибка загрузки фото. Попробуйте другое фото.';
-            errEl.style.display = 'block';
-            btn.disabled = false; btn.textContent = origText;
-            return;
-          }
-          await supabaseFetch(`/rest/v1/employees?id=eq.${savedId}`,
-            { method: 'PATCH', body: JSON.stringify({ ref_photo_url: photoPath }) });
+          const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/employees?id=eq.${savedId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${getToken()}`,
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({ ref_photo_url: photoPath }),
+            signal: AbortSignal.timeout(10000)
+          });
+          if (!patchRes.ok) throw new Error(`Не удалось сохранить ссылку на фото: ${patchRes.status}`);
         } catch (err) {
           errEl.textContent = `Ошибка при загрузке фото: ${err.message}`;
           errEl.style.display = 'block';
@@ -2866,9 +2870,13 @@
           'Content-Type': file.type || 'image/jpeg',
           'x-upsert': 'true'
         },
-        body: file
+        body: file,
+        signal: AbortSignal.timeout(30000)
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Upload failed ${res.status}: ${body}`);
+      }
       return `ref-photos/${path}`;
     }
 
