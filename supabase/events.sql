@@ -7,7 +7,7 @@ create table public.events (
   event_type             text          check (event_type in ('arrival', 'departure')),
   event_type_raw         text,
   status                 text          not null default 'pending'
-                                       check (status in ('pending', 'processing', 'done', 'needs_review')),
+                                       check (status in ('pending', 'processing', 'done', 'needs_review', 'duplicate', 'rejected')),
   hours                  numeric(5,2),
   absent_reason          text,
   hours_transferred      numeric(5,2)  default 0,
