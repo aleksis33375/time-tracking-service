@@ -382,7 +382,7 @@ def verify_face(photo_url: str, employee: dict) -> bool | None:
     try:
         event_encoding = compute_face_encoding(photo_bytes)
     except TimeoutError:
-        return None   # timeout при распознавании — пропускаем верификацию
+        raise  # пробрасываем — вызывающий код добавит флаг face_timeout
 
     if event_encoding is None:
         return False  # нет лица на фото → считаем несовпадением
@@ -756,6 +756,7 @@ def main() -> None:
 
         # п.6 Face recognition верификация
         photo_url = event.get("photo_url") or ""
+        face_timed_out = False
 
         if employee and not employee.get("face_embedding"):
             # Первое фото этого сотрудника — сохраняем как эталон
@@ -776,11 +777,18 @@ def main() -> None:
                 continue
             face_match = None  # верифицировать не с чем — пропускаем
         else:
-            face_match = verify_face(photo_url, employee) if employee else None
+            try:
+                face_match = verify_face(photo_url, employee) if employee else None
+            except TimeoutError:
+                face_match = None
+                face_timed_out = True
+                log("warning", "Face recognition timeout — routed to needs_review", {"event_id": eid})
         print(f"     face_match: {face_match}", flush=True)
 
         # п.7 Сборка fraud_flags, маршрутизация на needs_review
-        fraud_flags  = build_fraud_flags(event, face_match)
+        fraud_flags = build_fraud_flags(event, face_match)
+        if face_timed_out and "face_timeout" not in fraud_flags:
+            fraud_flags.append("face_timeout")
         go_review    = needs_review(employee, face_match, fraud_flags)
         print(f"     fraud_flags: {fraud_flags} | needs_review: {go_review}", flush=True)
 
