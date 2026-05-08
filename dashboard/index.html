@@ -3563,9 +3563,9 @@
     function loadSheetJS(cb) {
       if (typeof XLSX !== 'undefined') { cb(); return; }
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.src = 'xlsx.full.min.js';
       s.onload  = cb;
-      s.onerror = () => alert('Не удалось загрузить библиотеку Excel.\nПроверьте подключение к интернету.');
+      s.onerror = () => alert('Не удалось загрузить библиотеку Excel.');
       document.head.appendChild(s);
     }
 
