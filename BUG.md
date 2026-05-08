@@ -76,7 +76,7 @@ if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
 
 - **Файл:** `supabase/rls.sql`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** Политики разрешают любому authenticated пользователю удалять **всех** сотрудников или добавлять события. Anon key вшит в HTML → кто найдёт, может зарегистрироваться в Supabase.
 - **Решение:** Удалить политики `for delete to authenticated` и `for insert to authenticated`. Все записи только через `service_role`.
 
