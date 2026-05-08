@@ -322,11 +322,16 @@ def parse_embedding(embedding_val) -> np.ndarray | None:
     """Преобразует pgvector строку '[0.1,0.2,...]' или список → numpy array."""
     if embedding_val is None:
         return None
-    if isinstance(embedding_val, str):
-        return np.array(json.loads(embedding_val))
-    if isinstance(embedding_val, list):
-        return np.array(embedding_val)
-    return None
+    try:
+        if isinstance(embedding_val, str):
+            arr = np.array(json.loads(embedding_val))
+        elif isinstance(embedding_val, list):
+            arr = np.array(embedding_val)
+        else:
+            return None
+        return arr if arr.shape == (128,) else None
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 @with_timeout(FACE_TIMEOUT)
