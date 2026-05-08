@@ -2755,7 +2755,7 @@
           </td>
           <td style="color:var(--muted)">${escHtml(emp.position || '—')}</td>
           <td>${escHtml(emp.team || '—')}</td>
-          <td>${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') + ' ₽' : '—'}</td>
+          <td>${emp.daily_rate ? parseFloat(emp.daily_rate).toLocaleString('ru') + ' ₽' : '<span style="color:#DC2626;font-size:11px;font-weight:600;" title="Ставка не заполнена">⚠ не задана</span>'}</td>
           <td style="color:var(--muted)">${hourly}</td>
           <td>${archived
             ? '<span class="badge badge-gray">Архив</span>'
@@ -3529,8 +3529,8 @@
               <span style="font-weight:500;">${escHtml(emp.display_name)}</span>
             </td>
             <td class="ts-col-role ts-mob-hide" style="color:var(--muted);padding:3px 6px;">${escHtml(emp.position || '—')}</td>
-            <td class="ts-mob-hide">${emp.daily_rate > 0 ? parseFloat(emp.daily_rate).toLocaleString('ru') : (emp.team === 'Авто' ? '?' : '—')}</td>
-            <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate > 0 ? hourlyRate.toFixed(2) : (emp.team === 'Авто' ? '?' : '—')}</td>
+            <td class="ts-mob-hide">${emp.daily_rate > 0 ? parseFloat(emp.daily_rate).toLocaleString('ru') : '<span style="color:#DC2626;font-size:11px;font-weight:600;" title="Ставка не заполнена">⚠ не задана</span>'}</td>
+            <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate > 0 ? hourlyRate.toFixed(2) : '<span style="color:#DC2626;font-size:11px;font-weight:600;" title="Ставка не заполнена">⚠ не задана</span>'}</td>
             <td class="ts-mob-hide">${prevCell}</td>
             ${dayCells}
             <td class="ts-col-total">${totalHours ? totalHours.toFixed(1) : '—'}</td>
