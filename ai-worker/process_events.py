@@ -189,37 +189,49 @@ def _prefix_sim(a: str, b: str, min_prefix: int = 3) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
-def find_employee_by_name(name: str) -> dict | None:
+def find_employee_by_name(name: str, employees_cache: list | None = None) -> dict | None:
     """
     Ищет активного сотрудника по имени из подписи бригадира.
     Шаги (от точного к нечёткому):
-      1. Точный ilike.
+      1. Точный ilike (или точное совпадение по кэшу).
       1.5. Подстрока: «Саша» → «Саша (РР от Ярика)».
       1.6. Подстрока по очищенному имени: «Конец смены Андрей» → «андрей».
       1.7. Пофрагментное совпадение с никнеймами и нормализацией ь/ъ.
       2. Полный fuzzy по очищенному нормализованному имени.
+    employees_cache — предзагруженный список сотрудников из main(), избегает N+1 запросов.
     """
     if not name:
         return None
 
     name_clean = name.strip()
 
-    # Шаг 1 — точный ilike
-    rows = sb_get(
-        "/rest/v1/employees",
-        f"?display_name=ilike.{requests.utils.quote(name_clean)}"
-        f"&deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url&limit=1",
-    )
-    if isinstance(rows, list) and rows:
-        return rows[0]
+    if employees_cache is not None:
+        # Используем кэш — без запросов в БД
+        all_employees = employees_cache
+        if not all_employees:
+            return None
+        # Шаг 1 — точное совпадение по кэшу (ilike = case-insensitive)
+        name_lower_exact = name_clean.lower()
+        for emp in all_employees:
+            if emp["display_name"].lower() == name_lower_exact:
+                return emp
+    else:
+        # Шаг 1 — точный ilike через БД (старый путь без кэша)
+        rows = sb_get(
+            "/rest/v1/employees",
+            f"?display_name=ilike.{requests.utils.quote(name_clean)}"
+            f"&deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url&limit=1",
+        )
+        if isinstance(rows, list) and rows:
+            return rows[0]
 
-    # Загружаем всех активных сотрудников один раз
-    all_employees = sb_get(
-        "/rest/v1/employees",
-        "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url,aliases",
-    )
-    if not isinstance(all_employees, list) or not all_employees:
-        return None
+        # Загружаем всех активных сотрудников
+        all_employees = sb_get(
+            "/rest/v1/employees",
+            "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url,aliases",
+        )
+        if not isinstance(all_employees, list) or not all_employees:
+            return None
 
     name_lower    = name_clean.lower()
     name_for_match = _clean_name(name_clean)   # без слов типа события
@@ -714,6 +726,15 @@ def main() -> None:
 
     log("info", f"Claimed {len(events)} event(s) for processing")
 
+    # Загружаем всех сотрудников один раз для всего батча — fix BUG-024 N+1
+    employees_cache = sb_get(
+        "/rest/v1/employees",
+        "?deleted_at=is.null&select=id,display_name,face_embedding,ref_photo_url,aliases",
+    )
+    if not isinstance(employees_cache, list):
+        employees_cache = []
+    print(f"  employees cache: {len(employees_cache)} records loaded", flush=True)
+
     done_count   = 0
     review_count = 0
 
@@ -723,7 +744,7 @@ def main() -> None:
         print(f"  → event {eid} | name: {name!r}", flush=True)
 
         # п.5 Поиск сотрудника; если не найден — создаём автоматически
-        employee = find_employee_by_name(name)
+        employee = find_employee_by_name(name, employees_cache)
         if employee:
             print(f"     matched: {employee['display_name']}", flush=True)
         else:
