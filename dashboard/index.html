@@ -1252,18 +1252,21 @@
       return data;
     }
 
+    // Используем sessionStorage вместо localStorage (BUG-037):
+    // токен живёт только пока открыта вкладка — при закрытии браузера
+    // автоматически удаляется, что сужает окно для кражи через XSS.
     function getToken() {
-      try { return localStorage.getItem('sb_token'); }
+      try { return sessionStorage.getItem('sb_token'); }
       catch { return null; }
     }
 
     function setToken(token) {
-      try { localStorage.setItem('sb_token', token); }
-      catch { console.warn('localStorage unavailable'); }
+      try { sessionStorage.setItem('sb_token', token); }
+      catch { console.warn('sessionStorage unavailable'); }
     }
 
     function removeToken() {
-      try { localStorage.removeItem('sb_token'); }
+      try { sessionStorage.removeItem('sb_token'); }
       catch { /* приватный режим — игнорируем */ }
     }
 
