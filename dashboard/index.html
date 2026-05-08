@@ -2684,7 +2684,7 @@
     async function loadEmployees() {
       const archived = document.getElementById('emp-show-archived').checked;
       const filter   = archived ? 'deleted_at=not.is.null' : 'deleted_at=is.null';
-      const data = await guardedFetch(`/rest/v1/employees?select=*&${filter}&order=team.asc,display_name.asc`);
+      const data = await guardedFetch(`/rest/v1/employees?select=id,display_name,position,team,daily_rate,hourly_rate,deleted_at,aliases,ref_photo_url&${filter}&order=team.asc,display_name.asc`);
       if (!data) return;
       allEmployees = data;
       document.getElementById('emp-sub').textContent = archived

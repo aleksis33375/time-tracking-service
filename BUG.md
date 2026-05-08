@@ -370,9 +370,9 @@ FACE_TIMEOUT = 25
 
 - **Файл:** `dashboard/index.html:2605`
 - **Приоритет:** 🟠 ВЫСОКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `face_embedding` — массив 128 float = 1 KB × 50 сотрудников = лишние 50 KB при каждой загрузке.
-- **Решение:** Указать конкретные колонки в `select`.
+- **Решение:** `select=*` заменён на явный список: `id,display_name,position,team,daily_rate,hourly_rate,deleted_at,aliases,ref_photo_url`.
 
 ---
 
