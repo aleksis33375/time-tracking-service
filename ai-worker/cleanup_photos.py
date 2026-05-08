@@ -82,12 +82,12 @@ def storage_path_to_object(photo_url: str) -> str | None:
     return photo_url[len("photos/"):]   # убираем 'photos/' — остаток = путь внутри бакета
 
 
-def delete_objects(object_paths: list[str]) -> int:
+def delete_objects(object_paths: list[str]) -> list[str]:
     """
     Удаляет объекты из бакета 'photos' батчами.
-    Возвращает количество успешно удалённых файлов.
+    Возвращает список реально удалённых путей (только успешные батчи).
     """
-    deleted = 0
+    deleted_paths: list[str] = []
     for i in range(0, len(object_paths), DELETE_BATCH):
         batch = object_paths[i : i + DELETE_BATCH]
         res = requests.delete(
@@ -97,12 +97,12 @@ def delete_objects(object_paths: list[str]) -> int:
             timeout=30,
         )
         if res.status_code in (200, 204):
-            deleted += len(batch)
+            deleted_paths.extend(batch)
             print(f"  Deleted batch {i // DELETE_BATCH + 1}: {len(batch)} file(s)", flush=True)
         else:
             print(f"  Batch {i // DELETE_BATCH + 1} failed: {res.status_code} {res.text}", flush=True)
 
-    return deleted
+    return deleted_paths
 
 
 def clear_photo_urls(photo_urls: list[str]) -> None:
@@ -142,21 +142,22 @@ def main() -> None:
     if skipped:
         print(f"Skipped {skipped} non-photos path(s)", flush=True)
 
-    # Удаляем файлы из Storage
-    deleted = delete_objects(object_paths)
+    # Удаляем файлы из Storage — возвращает список реально удалённых путей
+    deleted_paths = delete_objects(object_paths)
 
-    # Обнуляем photo_url у удалённых записей (только успешно удалённые)
-    if deleted:
+    # Обнуляем photo_url только у тех записей, чьи файлы реально удалились
+    if deleted_paths:
+        deleted_paths_set = set(deleted_paths)
         deleted_urls = [
             url for url in photo_urls
-            if storage_path_to_object(url) in set(object_paths[:deleted])
+            if storage_path_to_object(url) in deleted_paths_set
         ]
-        clear_photo_urls(deleted_urls)   # обнуляем ТОЛЬКО успешно удалённые
+        clear_photo_urls(deleted_urls)
 
     log("info", "Cleanup Worker finished", {
         "retention_days": RETENTION_DAYS,
         "found":          len(photo_urls),
-        "deleted":        deleted,
+        "deleted":        len(deleted_paths),
         "skipped":        skipped,
     })
 

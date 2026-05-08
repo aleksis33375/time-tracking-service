@@ -144,7 +144,7 @@ if (!path || !path.startsWith('photos/') || path.includes('..')) {
 
 - **Файл:** `ai-worker/cleanup_photos.py:154`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `clear_photo_urls(photo_urls)` передаёт **ВСЕ** URL вместо только удалённых. Обнуляет связь между events и Storage.
 - **Решение:**
 ```python
