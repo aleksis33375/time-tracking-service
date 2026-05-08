@@ -2011,7 +2011,7 @@
         status:      status,
         fraud_flags: [],
       };
-      if (hoursVal !== '') patch.hours = parseFloat(hoursVal);
+      if (hoursVal !== '') patch.hours = Math.round(parseFloat(hoursVal) * 100) / 100;
 
       const token = getToken();
       let res;
