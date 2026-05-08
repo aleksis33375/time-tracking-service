@@ -794,6 +794,7 @@ def main() -> None:
             log("warning", "Duplicate departure detected", {
                 "event_id": eid, "employee": (employee or {}).get("display_name"),
             })
+            notify_manager(event, employee, dup_flags)
             review_count += 1
             continue
 
@@ -812,6 +813,7 @@ def main() -> None:
                 log("warning", "Duplicate arrival detected", {
                     "event_id": eid, "employee": employee.get("display_name"),
                 })
+                notify_manager(event, employee, dup_flags)
                 print(f"     → duplicate arrival", flush=True)
                 review_count += 1
                 continue
