@@ -1234,9 +1234,11 @@
       return true;
     }
 
-    function parseFraudFlags(str) {
+    function parseFraudFlags(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
       try {
-        const f = JSON.parse(str || '[]');
+        const f = JSON.parse(val);
         return Array.isArray(f) ? f : [];
       } catch {
         return [];
