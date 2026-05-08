@@ -2641,7 +2641,7 @@
           ? `<button class="btn btn-outline btn-sm" onclick="restoreEmployee('${emp.id}')">Восстановить</button>`
           : `<button class="btn btn-outline btn-sm" onclick="editEmployee('${emp.id}')">Изменить</button>
              <button class="btn btn-sm" style="background:var(--warn-bg);color:var(--warning);border:1px solid #FDE68A;"
-               onclick="archiveEmployee('${emp.id}','${escHtml(emp.display_name)}')">В архив</button>`;
+               onclick="archiveEmployee('${emp.id}',${JSON.stringify(emp.display_name)})">В архив</button>`;
         return `<tr>
           <td>
             <div style="display:flex;align-items:center;gap:10px;">

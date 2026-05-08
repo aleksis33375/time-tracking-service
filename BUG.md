@@ -101,7 +101,7 @@ onclick="goTo('review',${JSON.stringify({highlightEmployeeId: eid})})"
 
 - **Файл:** `dashboard/index.html:2644`
 - **Приоритет:** 🔴 КРИТИЧЕСКИЙ
-- **Статус:** Не исправлено
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `escHtml()` экранирует `"` но не `'`. Если `display_name = "Иван');alert(1);//"` → XSS.
 - **Решение:**
 ```js
