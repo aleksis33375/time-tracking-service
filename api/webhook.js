@@ -80,9 +80,15 @@ async function handlePhoto(msg) {
   let stampTimestamp   = null;  // из EXIF или OCR (ТОЛЬКО из фото!)
   let timeSource       = 'none';
 
+  let originalBuffer;
   try {
-    const originalBuffer = await downloadTelegramPhoto(largest.file_id);
+    originalBuffer = await downloadTelegramPhoto(largest.file_id);
+  } catch (err) {
+    await logToSupabase('error', 'webhook-handler', `Download failed: ${err.message}`, { chatId, messageId });
+    return;
+  }
 
+  try {
     const exif = await extractExifTimestamp(originalBuffer);
     if (exif) {
       stampTimestamp = exif;
@@ -100,7 +106,7 @@ async function handlePhoto(msg) {
     const compressedKb = Math.round(compressedBuffer.length / 1024);
     console.log(`Photo: ${originalKb} KB → ${compressedKb} KB, time_source: ${timeSource}, stamp: ${stampTimestamp || 'none'}`);
   } catch (err) {
-    await logToSupabase('warn', 'webhook-handler', `Photo download failed: ${err.message}`, { chatId, messageId });
+    await logToSupabase('warn', 'webhook-handler', `Photo processing failed: ${err.message}`, { chatId, messageId });
   }
 
   if (compressedBuffer) {
