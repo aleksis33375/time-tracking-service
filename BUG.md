@@ -496,7 +496,8 @@ FACE_TIMEOUT = 25
 
 ### BUG-041: SIGALRM не работает на Windows
 
-- **Описание:** GitHub Actions = Ubuntu, не влияет на продакшн.
+- **Статус:** ✅ Исправлено 2026-05-08
+- **Описание:** GitHub Actions = Ubuntu, не влияет на продакшн. Функция `with_timeout` сделана кросс-платформенной: на Linux используется SIGALRM, на Windows — threading-фолбэк с `Thread.join(timeout)`.
 
 ---
 

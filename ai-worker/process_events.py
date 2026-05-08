@@ -8,6 +8,7 @@ import json
 import signal
 import tempfile
 import functools
+import threading
 import requests
 import difflib
 import numpy as np
@@ -39,9 +40,28 @@ def timeout_handler(signum, frame):
 
 
 def with_timeout(seconds):
+    """Декоратор таймаута: SIGALRM на Linux, threading-фолбэк на Windows (BUG-041)."""
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            if not hasattr(signal, 'SIGALRM'):
+                # Windows: threading-based fallback
+                result_box = [None]
+                exc_box    = [None]
+                def _run():
+                    try:
+                        result_box[0] = func(*args, **kwargs)
+                    except Exception as e:
+                        exc_box[0] = e
+                t = threading.Thread(target=_run, daemon=True)
+                t.start()
+                t.join(seconds)
+                if t.is_alive():
+                    raise TimeoutError("Face recognition operation timed out")
+                if exc_box[0]:
+                    raise exc_box[0]
+                return result_box[0]
+            # Linux/macOS: SIGALRM (production path — GitHub Actions Ubuntu)
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(seconds)
             try:
