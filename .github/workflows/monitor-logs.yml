@@ -59,7 +59,7 @@ jobs:
               console.log(`\n📨 Активность webhook (${webhookLogs.length} записей):`);
               webhookLogs.forEach(l => {
                 const t = new Date(l.timestamp).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
-                const icon = l.level === 'error' ? '🔴' : l.level === 'warn' ? '🟡' : '🟢';
+                const icon = l.level === 'error' ? '🔴' : (l.level === 'warn' || l.level === 'warning') ? '🟡' : '🟢';
                 console.log(`  ${icon} ${t} — ${l.message}`);
                 if (l.meta && Object.keys(l.meta).length > 0) {
                   console.log(`     ${JSON.stringify(l.meta)}`);
@@ -77,7 +77,7 @@ jobs:
             }
 
             // Ошибки из всех источников
-            const errors = logs.filter(l => l.level === 'error' || l.level === 'warn');
+            const errors = logs.filter(l => l.level === 'error' || l.level === 'warn' || l.level === 'warning');
             if (errors.length > 0) {
               console.log(`\n⚠️  Предупреждения/ошибки за 10 мин:`);
               errors.forEach(l => {
