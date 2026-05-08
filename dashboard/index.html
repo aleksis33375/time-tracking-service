@@ -326,6 +326,16 @@
     }
     #backfill-banner .close-btn:hover { opacity: 1; }
 
+    /* ─── Network error banner ─────────────────────────────────────────── */
+    #net-error-banner {
+      display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+      color: white; padding: 12px 16px; text-align: center; font-size: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2); gap: 8px;
+      align-items: center; justify-content: center; flex-wrap: wrap;
+    }
+    #net-error-banner.show { display: flex; }
+
     /* ─── Print styles ──────────────────────────────────────────────────── */
     #ts-print-header { display: none; margin-bottom: 14px; }
     #ts-print-header h2 { font-size: 16pt; font-weight: 700; margin-bottom: 3px; }
@@ -409,6 +419,12 @@
   <div id="backfill-banner">
     <span id="backfill-text">📷 Данные пересчитаны с фото</span>
     <button class="close-btn" onclick="document.getElementById('backfill-banner').classList.remove('show')">✕</button>
+  </div>
+
+  <!-- Network error banner -->
+  <div id="net-error-banner">
+    <span id="net-error-text">Нет соединения с сервером. Проверьте интернет и обновите страницу.</span>
+    <button class="close-btn" onclick="document.getElementById('net-error-banner').classList.remove('show')">✕</button>
   </div>
 
   <!-- Загрузка -->
@@ -1187,6 +1203,18 @@
     // Check backfill status on page load
     document.addEventListener('DOMContentLoaded', checkBackfillStatus);
 
+    let _netErrorTimer = null;
+    function showNetworkError(msg) {
+      const banner = document.getElementById('net-error-banner');
+      const text   = document.getElementById('net-error-text');
+      if (text && msg) text.textContent = msg;
+      if (banner) {
+        banner.classList.add('show');
+        clearTimeout(_netErrorTimer);
+        _netErrorTimer = setTimeout(() => banner.classList.remove('show'), 5000);
+      }
+    }
+
     async function guardedFetch(path, options = {}) {
       // Проверяем срок токена до запроса
       if (!checkTokenExpiry()) return null;
@@ -1196,6 +1224,8 @@
         if (data.status === 401) {
           removeToken();
           showAuth();
+        } else if (data.status === 0) {
+          showNetworkError('Нет соединения с сервером. Проверьте интернет.');
         }
         return null;
       }
