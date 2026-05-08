@@ -27,7 +27,9 @@ export default async function handler(req, res) {
   if (!authCheck.ok) return res.status(401).json({ error: 'Invalid token' });
 
   const { path } = req.query;
-  if (!path) return res.status(400).json({ error: 'Missing path' });
+  if (!path || !path.startsWith('photos/') || path.includes('..')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
 
   const slash = path.indexOf('/');
   if (slash === -1) return res.status(400).json({ error: 'Invalid path format' });
