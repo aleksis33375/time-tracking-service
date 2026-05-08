@@ -3599,6 +3599,12 @@
         alert('Нет данных для выгрузки. Сначала откройте Табель.');
         return;
       }
+      const hasHours = employees.some(emp =>
+        days.some(dk => (eMap[emp.id] || {})[dk]?.hours)
+      );
+      if (!hasHours) {
+        if (!confirm('За выбранный период нет записей о часах.\nЭкспортировать пустой табель?')) return;
+      }
       const btn = document.getElementById('ts-excel-btn');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner spinner-sm"></span> Генерация...';
