@@ -452,6 +452,7 @@ FACE_TIMEOUT = 25
 ### BUG-035: sb_get/sb_patch без try/except — падение весь воркер
 
 - **Файл:** `ai-worker/process_events.py:56-82`
+- **Статус:** ✅ Исправлено 2026-05-08
 - **Описание:** `ConnectionError` → необработанное исключение → весь воркер падает → события в `processing` 15 мин.
 
 ---

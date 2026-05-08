@@ -56,32 +56,44 @@ def with_timeout(seconds):
 # ── Supabase helpers ──────────────────────────────────────────────────────────
 
 def sb_get(path: str, params: str = "") -> list | dict:
-    res = requests.get(f"{SUPABASE_URL}{path}{params}", headers=HEADERS, timeout=15)
-    return res.json()
+    try:
+        res = requests.get(f"{SUPABASE_URL}{path}{params}", headers=HEADERS, timeout=15)
+        return res.json()
+    except requests.exceptions.RequestException as e:
+        print(f"[NETWORK ERROR] GET {path}: {e}", flush=True)
+        return []
 
 
 def sb_patch(path: str, body: dict, prefer: str = "return=minimal") -> list | dict:
-    res = requests.patch(
-        f"{SUPABASE_URL}{path}",
-        headers={**HEADERS, "Prefer": prefer},
-        json=body,
-        timeout=15,
-    )
-    return res.json() if prefer == "return=representation" else {}
+    try:
+        res = requests.patch(
+            f"{SUPABASE_URL}{path}",
+            headers={**HEADERS, "Prefer": prefer},
+            json=body,
+            timeout=15,
+        )
+        return res.json() if prefer == "return=representation" else {}
+    except requests.exceptions.RequestException as e:
+        print(f"[NETWORK ERROR] PATCH {path}: {e}", flush=True)
+        return {}
 
 
 def sb_post(path: str, body: dict) -> dict:
     """POST в Supabase REST API, возвращает созданную запись."""
-    res = requests.post(
-        f"{SUPABASE_URL}{path}",
-        headers={**HEADERS, "Prefer": "return=representation"},
-        json=body,
-        timeout=15,
-    )
-    data = res.json()
-    if isinstance(data, list) and data:
-        return data[0]
-    return data
+    try:
+        res = requests.post(
+            f"{SUPABASE_URL}{path}",
+            headers={**HEADERS, "Prefer": "return=representation"},
+            json=body,
+            timeout=15,
+        )
+        data = res.json()
+        if isinstance(data, list) and data:
+            return data[0]
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"[NETWORK ERROR] POST {path}: {e}", flush=True)
+        return {}
 
 
 def log(level: str, message: str, meta: dict | None = None) -> None:
@@ -91,7 +103,10 @@ def log(level: str, message: str, meta: dict | None = None) -> None:
         "message": message,
         "meta":    meta or {},
     }
-    requests.post(f"{SUPABASE_URL}/rest/v1/logs", headers=HEADERS, json=payload, timeout=10)
+    try:
+        requests.post(f"{SUPABASE_URL}/rest/v1/logs", headers=HEADERS, json=payload, timeout=10)
+    except requests.exceptions.RequestException:
+        pass  # не можем логировать — хотя бы пишем в stdout
     print(f"[{level.upper()}] {message}", flush=True)
 
 
