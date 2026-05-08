@@ -3,6 +3,7 @@
  * POST /api/webhook
  */
 
+import { timingSafeEqual } from 'crypto';
 import sharp from 'sharp';
 import exifReader from 'exif-reader';
 import Tesseract from 'tesseract.js';
@@ -29,9 +30,14 @@ export default async function handler(req, res) {
     return res.status(405).end();
   }
 
-  // Validate secret token
+  // Validate secret token (BUG-038: constant-time compare prevents timing attacks)
   const secret = req.headers['x-telegram-bot-api-secret-token'];
-  if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
+  if (!WEBHOOK_SECRET || !secret) {
+    return res.status(403).end();
+  }
+  const secretBuf   = Buffer.from(secret);
+  const expectedBuf = Buffer.from(WEBHOOK_SECRET);
+  if (secretBuf.length !== expectedBuf.length || !timingSafeEqual(secretBuf, expectedBuf)) {
     return res.status(403).end();
   }
 
