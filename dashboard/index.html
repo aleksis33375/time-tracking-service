@@ -1134,6 +1134,10 @@
 
   <script>
     /* ─── Конфигурация Supabase ─────────────────────────────────────────── */
+    // SUPABASE_KEY — это публичный anon-ключ (role: anon).
+    // По архитектуре Supabase он СПЕЦИАЛЬНО предназначен для client-side кода
+    // и может быть виден в исходнике. Безопасность обеспечивается RLS-политиками
+    // на стороне базы данных (см. BUG-004 — исправлено 2026-05-08).
     const SUPABASE_URL = 'https://weqvsquaftkxrafybrnk.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlcXZzcXVhZnRreHJhZnlicm5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDA2NjYsImV4cCI6MjA5MjI3NjY2Nn0.ZGI8lprQ_RfZY6pyA003rs2HcICWLne_GrS90LDzkzg';
     const ADMIN_EMAIL  = 'admin@dashboard.local';
