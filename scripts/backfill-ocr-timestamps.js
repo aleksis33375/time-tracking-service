@@ -26,11 +26,14 @@ async function extractOcrTimestamp(buffer, createdAtIso) {
       .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
       .greyscale()
       .normalise()
+      .resize({ width: meta.width * 2, kernel: 'lanczos3' })
+      .sharpen({ sigma: 1.5 })
       .toBuffer();
 
     const ocrResult = await Promise.race([
       Tesseract.recognize(croppedBuf, 'eng', {
         tessedit_char_whitelist: '0123456789:.',
+        tessedit_pageseg_mode: '6',
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('OCR timeout')), 6000)
@@ -69,7 +72,7 @@ async function updateEvent(eventId, photoTimestamp, newStatus) {
   const body = { photo_timestamp: photoTimestamp };
   if (newStatus) body.status = newStatus;
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}&status=in.(done,needs_review)`, {
     method: 'PATCH',
     headers: HEADERS,
     body: JSON.stringify(body),
@@ -97,7 +100,7 @@ async function main() {
   try {
     // Fetch all events with photos
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&select=id,photo_url,photo_timestamp,status,created_at&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=1000`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -131,7 +134,7 @@ async function main() {
         );
 
         // Reset to pending only if currently done (preserve needs_review edits)
-        const newStatus = ev.status === 'done' ? 'pending' : null;
+        const newStatus = (ev.status === 'done' || ev.status === 'needs_review') ? 'pending' : null;
         await updateEvent(ev.id, ocrTime, newStatus);
         updated++;
       } catch (err) {

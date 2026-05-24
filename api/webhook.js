@@ -287,17 +287,20 @@ async function extractOcrTimestamp(buffer) {
     const meta = await sharp(buffer).metadata();
     if (!meta.width || !meta.height) return null;
 
-    const cropTop    = Math.floor(meta.height * 0.72);
+    const cropTop    = Math.floor(meta.height * 0.65);
     const croppedBuf = await sharp(buffer)
       .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
       .greyscale()
       .normalise()
+      .resize({ width: meta.width * 2, kernel: 'lanczos3' })
+      .sharpen({ sigma: 1.5 })
       .toBuffer();
 
     // Проход 1: только цифры — для времени и числовой даты (07.05.2026, 2026-05-07)
     const ocrNum = await Promise.race([
       Tesseract.recognize(croppedBuf, 'eng', {
         tessedit_char_whitelist: '0123456789:./-',
+        tessedit_pageseg_mode: '6',
       }),
       new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 6000)),
     ]).catch(() => null);
@@ -329,7 +332,7 @@ async function extractOcrTimestamp(buffer) {
       // Проход 2: русские/английские месяцы («7 мая 2026», «7 May 2026»)
       console.log('OCR: numeric date not found, trying month-name pass...');
       const ocrRus = await Promise.race([
-        Tesseract.recognize(croppedBuf, 'rus+eng'),
+        Tesseract.recognize(croppedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
         new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 5000)),
       ]).catch(() => null);
 
