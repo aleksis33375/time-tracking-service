@@ -72,7 +72,7 @@ async function updateEvent(eventId, photoTimestamp, newStatus) {
   const body = { photo_timestamp: photoTimestamp };
   if (newStatus) body.status = newStatus;
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}&status=in.(done,needs_review)`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}&status=in.(done,needs_review,pending)`, {
     method: 'PATCH',
     headers: HEADERS,
     body: JSON.stringify(body),

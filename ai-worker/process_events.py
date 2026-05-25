@@ -26,7 +26,7 @@ HEADERS = {
     "Content-Type":  "application/json",
 }
 
-BATCH_SIZE   = 10   # записей за один прогон; 10×25=250 сек < 8 мин лимита GitHub Actions
+BATCH_SIZE   = 18   # записей за один прогон; 18×25=450 сек < 8 мин лимита GitHub Actions
 STUCK_AFTER  = 15   # минут до признания записи зависшей
 FACE_TIMEOUT = 25   # секунд timeout для face recognition операций
 
