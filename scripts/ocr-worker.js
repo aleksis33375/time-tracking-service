@@ -1,7 +1,6 @@
 /**
- * Backfill — OCR Timestamps
- * Re-processes all saved photos to extract correct timestamps via OCR.
- * Resets status to 'pending' for modified events so ai-worker recalculates hours.
+ * OCR Worker — extract photo_timestamp from recent events
+ * Runs every 5 min via GitHub Actions, processes events from the last 4 hours.
  */
 
 import sharp from 'sharp';
@@ -16,18 +15,17 @@ const HEADERS = {
   'Content-Type': 'application/json',
 };
 
-const RU_MONTHS_BF = {
+const RU_MONTHS = {
   'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,
   'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12,
 };
-const EN_MONTHS_BF = {
+const EN_MONTHS = {
   'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
   'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
 };
 
 async function extractOcrTimestamp(buffer, worker) {
   try {
-    // Полное изображение, без кропа; resize до 1600px withoutEnlargement (не ×2)
     const preparedBuf = await sharp(buffer)
       .greyscale()
       .normalise()
@@ -35,7 +33,7 @@ async function extractOcrTimestamp(buffer, worker) {
       .sharpen({ sigma: 1.5 })
       .toBuffer();
 
-    // Проход 1: shared eng-worker — числовая дата + время
+    // Проход 1: числовая дата + время
     const ocrResult = await Promise.race([
       worker.recognize(preparedBuf),
       new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 15000)),
@@ -69,7 +67,7 @@ async function extractOcrTimestamp(buffer, worker) {
       const mMatch = rusText.match(/(\d{1,2})\s+([а-яёa-z]{3,})[а-яёa-z]*\.?,?\s+(\d{4})/i);
       if (mMatch) {
         const key  = mMatch[2].toLowerCase().slice(0, 3);
-        const mNum = RU_MONTHS_BF[key] || EN_MONTHS_BF[key];
+        const mNum = RU_MONTHS[key] || EN_MONTHS[key];
         if (mNum) {
           day   = mMatch[1];
           month = String(mNum);
@@ -96,82 +94,51 @@ async function downloadPhoto(photoUrl) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function updateEvent(eventId, photoTimestamp, newStatus) {
-  const body = { photo_timestamp: photoTimestamp };
-  if (newStatus) body.status = newStatus;
-
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}&status=in.(done,needs_review,pending)`, {
+async function updateEvent(eventId, photoTimestamp) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}`, {
     method: 'PATCH',
     headers: HEADERS,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ photo_timestamp: photoTimestamp }),
   });
   if (!res.ok) throw new Error(`Update failed: ${res.status}`);
 }
 
-async function logComplete(updated, total) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/logs`, {
-    method: 'POST',
-    headers: HEADERS,
-    body: JSON.stringify({
-      level: 'info',
-      source: 'backfill',
-      message: 'Backfill complete',
-      meta: { events_updated: updated, total: total },
-    }),
-  });
-  if (!res.ok) console.warn('Log write failed:', res.status);
-}
-
 async function main() {
-  console.log('🔄 Backfill OCR Timestamps started');
+  console.log('🔄 OCR Worker started');
 
-  // Один воркер на весь прогон — экономим 3–7 сек на каждом фото
   const worker = await Tesseract.createWorker('rus+eng');
 
   try {
+    const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url&limit=50`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
 
     const events = await res.json();
-    console.log(`📦 Found ${events.length} events with photos`);
+    console.log(`📦 Found ${events.length} events without timestamp`);
 
     let updated = 0;
-    let processed = 0;
 
     for (const ev of events) {
-      processed++;
-      if (processed % 10 === 0) console.log(`  Processing ${processed}/${events.length}...`);
-
       try {
         const photo = await downloadPhoto(ev.photo_url);
         const ocrTime = await extractOcrTimestamp(photo, worker);
 
         if (!ocrTime) continue;
 
-        // Если photo_timestamp был null — всегда обновляем
-        const hadNoTimestamp = !ev.photo_timestamp;
-        if (!hadNoTimestamp) {
-          const diffMs = Math.abs(new Date(ocrTime) - new Date(ev.photo_timestamp));
-          if (diffMs / 60000 < 2) continue;
-        }
-
-        console.log(`  ✏️  Event ${ev.id}: ${ev.photo_timestamp || 'null'} → ${ocrTime}`);
-
-        const newStatus = (ev.status === 'done' || ev.status === 'needs_review') ? 'pending' : null;
-        await updateEvent(ev.id, ocrTime, newStatus);
+        await updateEvent(ev.id, ocrTime);
         updated++;
+        console.log(`  ✏️  Event ${ev.id}: → ${ocrTime}`);
       } catch (err) {
         console.warn(`  ⚠️  Event ${ev.id}: ${err.message}`);
       }
     }
 
-    console.log(`✅ Backfill complete: ${updated}/${events.length} events updated`);
-    await logComplete(updated, events.length);
+    console.log(`OCR Worker: ${updated}/${events.length} events updated`);
   } catch (err) {
-    console.error('❌ Backfill failed:', err.message);
+    console.error('❌ OCR Worker failed:', err.message);
     process.exit(1);
   } finally {
     await worker.terminate();
