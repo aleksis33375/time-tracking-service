@@ -73,17 +73,11 @@ async function handlePhoto(msg) {
   const messageId = msg.message_id;
   console.log('Photo received', { chatId, messageId });
 
-  // Telegram присылает несколько размеров — берём наибольший
   const largest = msg.photo[msg.photo.length - 1];
 
-  // Подпись читаем напрямую из Telegram caption — без OCR
-  const caption = parseCaptionText(msg.caption || '');
-  console.log('Caption (from msg.caption):', caption);
-
-  // Скачиваем и сжимаем фото (не критично — продолжаем без фото если не вышло)
   let compressedBuffer = null;
   let photoUrl         = null;
-  let stampTimestamp   = null;  // из EXIF или OCR (ТОЛЬКО из фото!)
+  let stampTimestamp   = null;
   let timeSource       = 'none';
 
   let originalBuffer;
@@ -95,28 +89,49 @@ async function handlePhoto(msg) {
   }
 
   try {
+    // EXIF читаем с оригинала (compression strip-ит метаданные)
     const exif = await extractExifTimestamp(originalBuffer);
     if (exif) {
       stampTimestamp = exif;
       timeSource = 'exif';
-    } else {
-      const ocr = await extractOcrTimestamp(originalBuffer);
-      if (ocr) {
-        stampTimestamp = ocr;
-        timeSource = 'ocr';
-      }
     }
 
+    // Сжимаем до ~1200px — OCR запускается на сжатом фото
     compressedBuffer = await compressPhoto(originalBuffer);
     const originalKb   = Math.round(originalBuffer.length   / 1024);
     const compressedKb = Math.round(compressedBuffer.length / 1024);
-    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB, time_source: ${timeSource}, stamp: ${stampTimestamp || 'none'}`);
+    console.log(`Photo: ${originalKb} KB → ${compressedKb} KB`);
   } catch (err) {
     await logToSupabase('warn', 'webhook-handler', `Photo processing failed: ${err.message}`, { chatId, messageId });
   }
 
+  // OCR timestamp — только если EXIF не нашёл дату
+  if (!stampTimestamp && compressedBuffer) {
+    const ocr = await extractOcrTimestamp(compressedBuffer);
+    if (ocr) {
+      stampTimestamp = ocr;
+      timeSource = 'ocr';
+    }
+  }
+
+  console.log(`time_source: ${timeSource}, stamp: ${stampTimestamp || 'none'}`);
+
+  // Третий проход: имя + тип события с фото (rus+eng), fallback — Telegram caption
+  let caption = parseCaptionText(msg.caption || '');
   if (compressedBuffer) {
-    // Сохранение сжатого фото в Supabase Storage
+    const ocrCaption = await extractOcrCaption(compressedBuffer);
+    if (ocrCaption.nameFromPhoto || ocrCaption.eventType) {
+      caption = {
+        nameFromPhoto: ocrCaption.nameFromPhoto || caption.nameFromPhoto,
+        eventType:     ocrCaption.eventType     || caption.eventType,
+        eventTypeRaw:  ocrCaption.eventTypeRaw  || caption.eventTypeRaw,
+        rawCaption:    ocrCaption.rawCaption,
+      };
+    }
+  }
+  console.log('Caption:', caption);
+
+  if (compressedBuffer) {
     photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
     if (!photoUrl) {
       await logToSupabase('warn', 'webhook-handler', 'Failed to upload photo to storage', { chatId, messageId });
@@ -124,24 +139,13 @@ async function handlePhoto(msg) {
   }
 
   if (!stampTimestamp) {
-    // Время из фото не найдено — msg.date (Telegram) не используется ни при каких условиях.
     await logToSupabase('warn', 'webhook-handler',
-      'No photo timestamp (no EXIF, no OCR date+time). Event saved as needs_review.', {
+      'No photo timestamp (no EXIF, no OCR date+time). Saving as pending.', {
         chatId, messageId, name: caption.nameFromPhoto,
       });
-    await insertEvent({
-      photo_url:       photoUrl,
-      photo_timestamp: null,
-      status:          'needs_review',
-      name_from_photo: caption.nameFromPhoto,
-      event_type:      caption.eventType,
-      event_type_raw:  caption.eventTypeRaw,
-      fraud_flags:     ['no_photo_time'],
-    });
-    return;
   }
 
-  // Запись в events — только время из фото
+  // Всегда status:'pending' — даже если штамп не прочитался
   await insertEvent({
     photo_url:       photoUrl,
     photo_timestamp: stampTimestamp,
@@ -149,7 +153,7 @@ async function handlePhoto(msg) {
     name_from_photo: caption.nameFromPhoto,
     event_type:      caption.eventType,
     event_type_raw:  caption.eventTypeRaw,
-    fraud_flags:     [],
+    fraud_flags:     stampTimestamp ? [] : ['no_photo_time'],
   });
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
@@ -284,31 +288,25 @@ async function extractExifTimestamp(buffer) {
 
 async function extractOcrTimestamp(buffer) {
   try {
-    const meta = await sharp(buffer).metadata();
-    if (!meta.width || !meta.height) return null;
-
-    const cropTop    = Math.floor(meta.height * 0.65);
-    const croppedBuf = await sharp(buffer)
-      .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
+    // Полное изображение, без кропа — штамп найдётся где бы он ни стоял
+    const preparedBuf = await sharp(buffer)
       .greyscale()
       .normalise()
-      .resize({ width: meta.width * 2, kernel: 'lanczos3' })
       .sharpen({ sigma: 1.5 })
       .toBuffer();
 
-    // Проход 1: только цифры — для времени и числовой даты (07.05.2026, 2026-05-07)
+    // Проход 1: только цифры — для числовой даты (07.05.2026) + времени (HH:MM:SS)
     const ocrNum = await Promise.race([
-      Tesseract.recognize(croppedBuf, 'eng', {
+      Tesseract.recognize(preparedBuf, 'eng', {
         tessedit_char_whitelist: '0123456789:./-',
         tessedit_pageseg_mode: '6',
       }),
-      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 6000)),
+      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 12000)),
     ]).catch(() => null);
 
     const numText = ocrNum?.data?.text || '';
     console.log('OCR num:', numText.trim());
 
-    // Время — всегда из числового прохода
     const timeMatch = numText.match(/(\d{1,2}):(\d{2}):(\d{2})/);
     if (!timeMatch) {
       console.log('OCR: time pattern not found');
@@ -316,7 +314,6 @@ async function extractOcrTimestamp(buffer) {
     }
     const [, h, m, s] = timeMatch;
 
-    // Дата — числовые форматы (07.05.2026, 07/05/2026, 2026-05-07)
     const dateMatchDMY = numText.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
     const dateMatchYMD = numText.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
 
@@ -329,11 +326,11 @@ async function extractOcrTimestamp(buffer) {
       [, year, month, day] = dateMatchYMD;
       console.log('OCR date (numeric YMD):', `${year}-${month}-${day}`);
     } else {
-      // Проход 2: русские/английские месяцы («7 мая 2026», «7 May 2026»)
+      // Проход 2: русские/английские названия месяцев («7 мая 2026 г.»)
       console.log('OCR: numeric date not found, trying month-name pass...');
       const ocrRus = await Promise.race([
-        Tesseract.recognize(croppedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
-        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 5000)),
+        Tesseract.recognize(preparedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
+        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 10000)),
       ]).catch(() => null);
 
       const rusText = ocrRus?.data?.text || '';
@@ -375,6 +372,28 @@ async function extractOcrTimestamp(buffer) {
   } catch (err) {
     console.warn('OCR failed:', err.message);
     return null;
+  }
+}
+
+async function extractOcrCaption(buffer) {
+  try {
+    const preparedBuf = await sharp(buffer)
+      .greyscale()
+      .normalise()
+      .sharpen({ sigma: 1.5 })
+      .toBuffer();
+
+    const ocrResult = await Promise.race([
+      Tesseract.recognize(preparedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
+      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 10000)),
+    ]).catch(() => null);
+
+    const text = ocrResult?.data?.text || '';
+    console.log('OCR caption text:', text.trim().slice(0, 120));
+    return parseCaptionText(text);
+  } catch (err) {
+    console.warn('OCR caption failed:', err.message);
+    return { nameFromPhoto: null, eventType: null, eventTypeRaw: null, rawCaption: '' };
   }
 }
 

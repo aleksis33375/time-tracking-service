@@ -16,47 +16,73 @@ const HEADERS = {
   'Content-Type': 'application/json',
 };
 
-async function extractOcrTimestamp(buffer, createdAtIso) {
-  try {
-    const meta = await sharp(buffer).metadata();
-    if (!meta.width || !meta.height) return null;
+const RU_MONTHS_BF = {
+  'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,
+  'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12,
+};
+const EN_MONTHS_BF = {
+  'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+  'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
+};
 
-    const cropTop = Math.floor(meta.height * 0.72);
-    const croppedBuf = await sharp(buffer)
-      .extract({ left: 0, top: cropTop, width: meta.width, height: meta.height - cropTop })
+async function extractOcrTimestamp(buffer, worker) {
+  try {
+    // Полное изображение, без кропа; resize до 1600px withoutEnlargement (не ×2)
+    const preparedBuf = await sharp(buffer)
       .greyscale()
       .normalise()
-      .resize({ width: meta.width * 2, kernel: 'lanczos3' })
+      .resize({ width: 1600, withoutEnlargement: true, kernel: 'lanczos3' })
       .sharpen({ sigma: 1.5 })
       .toBuffer();
 
+    // Проход 1: shared eng-worker — числовая дата + время
     const ocrResult = await Promise.race([
-      Tesseract.recognize(croppedBuf, 'eng', {
-        tessedit_char_whitelist: '0123456789:.',
-        tessedit_pageseg_mode: '6',
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('OCR timeout')), 6000)
-      ),
-    ]);
+      worker.recognize(preparedBuf),
+      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 15000)),
+    ]).catch(() => null);
 
-    const text = ocrResult.data.text;
-    const timeMatch = text.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+    const numText = ocrResult?.data?.text || '';
+
+    const timeMatch = numText.match(/(\d{1,2}):(\d{2}):(\d{2})/);
     if (!timeMatch) return null;
-
     const [, h, m, s] = timeMatch;
-    const createdDate = new Date(createdAtIso);
-    const moscowMs = Date.UTC(
-      createdDate.getUTCFullYear(),
-      createdDate.getUTCMonth(),
-      createdDate.getUTCDate(),
-      parseInt(h),
-      parseInt(m),
-      parseInt(s)
-    );
+
+    const dateMatchDMY = numText.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    const dateMatchYMD = numText.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
+
+    let day, month, year;
+
+    if (dateMatchDMY) {
+      [, day, month, year] = dateMatchDMY;
+    } else if (dateMatchYMD) {
+      [, year, month, day] = dateMatchYMD;
+    } else {
+      // Проход 2: названия месяцев (rus+eng) — отдельный вызов только при необходимости
+      const ocrRus = await Promise.race([
+        Tesseract.recognize(preparedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
+        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 15000)),
+      ]).catch(() => null);
+
+      const rusText = ocrRus?.data?.text || '';
+      const mMatch = rusText.match(/(\d{1,2})\s+([а-яёa-z]{3,})[а-яёa-z]*\.?\s+(\d{4})/i);
+      if (mMatch) {
+        const key  = mMatch[2].toLowerCase().slice(0, 3);
+        const mNum = RU_MONTHS_BF[key] || EN_MONTHS_BF[key];
+        if (mNum) {
+          day   = mMatch[1];
+          month = String(mNum);
+          year  = mMatch[3];
+        }
+      }
+    }
+
+    if (!day || !month || !year) return null;
+
+    const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
+                               parseInt(h), parseInt(m), parseInt(s));
     const utcMs = moscowMs - 3 * 3600 * 1000;
     return new Date(utcMs).toISOString();
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -97,8 +123,10 @@ async function logComplete(updated, total) {
 async function main() {
   console.log('🔄 Backfill OCR Timestamps started');
 
+  // Один воркер на весь прогон — экономим 3–7 сек на каждом фото
+  const worker = await Tesseract.createWorker('eng');
+
   try {
-    // Fetch all events with photos
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=1000`,
       { headers: HEADERS }
@@ -117,23 +145,19 @@ async function main() {
 
       try {
         const photo = await downloadPhoto(ev.photo_url);
-        const ocrTime = await extractOcrTimestamp(photo, ev.created_at);
+        const ocrTime = await extractOcrTimestamp(photo, worker);
 
         if (!ocrTime) continue;
 
-        const oldTime = new Date(ev.photo_timestamp);
-        const newTime = new Date(ocrTime);
-        const diffMs = Math.abs(newTime - oldTime);
-        const diffMins = diffMs / 60000;
+        // Если photo_timestamp был null — всегда обновляем
+        const hadNoTimestamp = !ev.photo_timestamp;
+        if (!hadNoTimestamp) {
+          const diffMs = Math.abs(new Date(ocrTime) - new Date(ev.photo_timestamp));
+          if (diffMs / 60000 < 2) continue;
+        }
 
-        // Only update if difference > 2 minutes
-        if (diffMins < 2) continue;
+        console.log(`  ✏️  Event ${ev.id}: ${ev.photo_timestamp || 'null'} → ${ocrTime}`);
 
-        console.log(
-          `  ✏️  Event ${ev.id}: ${ev.photo_timestamp} → ${ocrTime} (${diffMins.toFixed(1)} min diff)`
-        );
-
-        // Reset to pending only if currently done (preserve needs_review edits)
         const newStatus = (ev.status === 'done' || ev.status === 'needs_review') ? 'pending' : null;
         await updateEvent(ev.id, ocrTime, newStatus);
         updated++;
@@ -147,6 +171,8 @@ async function main() {
   } catch (err) {
     console.error('❌ Backfill failed:', err.message);
     process.exit(1);
+  } finally {
+    await worker.terminate();
   }
 }
 
