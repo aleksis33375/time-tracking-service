@@ -286,105 +286,100 @@ async function extractExifTimestamp(buffer) {
   }
 }
 
+const WH_RU_MONTHS = { 'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12 };
+const WH_EN_MONTHS = { 'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12 };
+
+function whPrepareText(raw) {
+  return raw
+    .replace(/(\d{2})1(\d{2}):(\d{2})/g, '$1:$2:$3')
+    .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
+    .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
+    .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
+    .replace(/г[;,]/g, 'г.');
+}
+
+function whTryExtract(text) {
+  const t = whPrepareText(text);
+  const full = t.match(/(\d{1,2})\s*([а-яёa-z]{3,})\s*(\d{4})[^0-9]+(\d{1,2}):(\d{2}):(\d{2})/i);
+  if (full) {
+    const mNum = WH_RU_MONTHS[full[2].toLowerCase().slice(0,3)] || WH_EN_MONTHS[full[2].toLowerCase().slice(0,3)];
+    if (mNum) return { found: true, day: full[1], month: mNum, year: full[3], h: full[4], m: full[5], s: full[6] };
+  }
+  const time = t.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+  const dmy  = t.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  const ymd  = t.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
+  if (time && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: dmy[3], h: time[1], m: time[2], s: time[3] };
+  if (time && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: time[1], m: time[2], s: time[3] };
+  return { found: false };
+}
+
+function whToIso({ day, month, year, h, m, s }) {
+  const moscowMs = Date.UTC(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(h), parseInt(m), parseInt(s));
+  return new Date(moscowMs - 3 * 3600 * 1000).toISOString();
+}
+
 async function extractOcrTimestamp(buffer) {
+  let worker;
   try {
-    // Полное изображение, без кропа — штамп найдётся где бы он ни стоял
-    const preparedBuf = await sharp(buffer)
-      .greyscale()
-      .normalise()
-      .sharpen({ sigma: 1.5 })
-      .toBuffer();
+    worker = await Tesseract.createWorker('rus+eng');
+    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
 
-    // Проход 1: только цифры — для числовой даты (07.05.2026) + времени (HH:MM:SS)
-    const ocrNum = await Promise.race([
-      Tesseract.recognize(preparedBuf, 'eng', {
-        tessedit_char_whitelist: '0123456789:./-',
-        tessedit_pageseg_mode: '6',
-      }),
-      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 12000)),
-    ]).catch(() => null);
-
-    const numText = ocrNum?.data?.text || '';
-    console.log('OCR num:', numText.trim());
-
-    const timeMatch = numText.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-    if (!timeMatch) {
-      console.log('OCR: time pattern not found');
-      return null;
-    }
-    const [, h, m, s] = timeMatch;
-
-    const dateMatchDMY = numText.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
-    const dateMatchYMD = numText.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
-
-    let day, month, year;
-
-    if (dateMatchDMY) {
-      [, day, month, year] = dateMatchDMY;
-      console.log('OCR date (numeric DMY):', `${day}.${month}.${year}`);
-    } else if (dateMatchYMD) {
-      [, year, month, day] = dateMatchYMD;
-      console.log('OCR date (numeric YMD):', `${year}-${month}-${day}`);
-    } else {
-      // Проход 2: русские/английские названия месяцев («7 мая 2026 г.»)
-      console.log('OCR: numeric date not found, trying month-name pass...');
-      const ocrRus = await Promise.race([
-        Tesseract.recognize(preparedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
-        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 10000)),
+    const ocr = async (buf) => {
+      const r = await Promise.race([
+        worker.recognize(buf),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
       ]).catch(() => null);
+      return r?.data?.text || '';
+    };
 
-      const rusText = ocrRus?.data?.text || '';
-      console.log('OCR rus:', rusText.trim());
+    // Pass A: full image
+    const fullBuf = await sharp(buffer)
+      .greyscale().normalise()
+      .resize({ width: 1600, withoutEnlargement: true, kernel: 'lanczos3' })
+      .sharpen({ sigma: 1.5 }).toBuffer();
 
-      const RU_MONTHS = {
-        'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,
-        'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12,
-      };
-      const EN_MONTHS = {
-        'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
-        'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
-      };
+    const resA = whTryExtract(await ocr(fullBuf));
+    if (resA.found) { console.log('OCR A:', resA); return whToIso(resA); }
 
-      const mMatch = rusText.match(/(\d{1,2})\s+([а-яёa-z]{3,})[а-яёa-z]*\.?\s+(\d{4})/i);
-      if (mMatch) {
-        const key  = mMatch[2].toLowerCase().slice(0, 3);
-        const mNum = RU_MONTHS[key] || EN_MONTHS[key];
-        if (mNum) {
-          day   = mMatch[1];
-          month = String(mNum);
-          year  = mMatch[3];
-          console.log('OCR date (month name):', `${day} ${mMatch[2]} ${year}`);
-        }
-      }
-    }
+    // Pass B: corner crops (right 60% × top/bottom 30%)
+    const meta  = await sharp(buffer).metadata();
+    const cropL = Math.floor(meta.width * 0.40);
+    const cropW = meta.width - cropL;
+    const cornH = Math.floor(meta.height * 0.30);
 
-    if (!day || !month || !year) {
-      console.log('OCR: date not found in stamp');
-      return null;
-    }
+    const cropBuf = (top) =>
+      sharp(buffer)
+        .extract({ left: cropL, top, width: cropW, height: cornH })
+        .greyscale().normalise()
+        .resize({ width: 900, kernel: 'lanczos3' })
+        .sharpen({ sigma: 1.5 }).toBuffer();
 
-    const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
-                               parseInt(h), parseInt(m), parseInt(s));
-    const utcMs    = moscowMs - 3 * 3600 * 1000;
-    const result   = new Date(utcMs).toISOString();
-    console.log('OCR timestamp:', result);
-    return result;
+    const resTop = whTryExtract(await ocr(await cropBuf(0)));
+    if (resTop.found) { console.log('OCR top-crop:', resTop); return whToIso(resTop); }
+
+    const resBot = whTryExtract(await ocr(await cropBuf(meta.height - cornH)));
+    if (resBot.found) { console.log('OCR bot-crop:', resBot); return whToIso(resBot); }
+
+    console.log('OCR: stamp not found');
+    return null;
   } catch (err) {
     console.warn('OCR failed:', err.message);
     return null;
+  } finally {
+    if (worker) await worker.terminate().catch(() => {});
   }
 }
 
 async function extractOcrCaption(buffer) {
+  let worker;
   try {
     const preparedBuf = await sharp(buffer)
-      .greyscale()
-      .normalise()
-      .sharpen({ sigma: 1.5 })
-      .toBuffer();
+      .greyscale().normalise().sharpen({ sigma: 1.5 }).toBuffer();
 
+    worker = await Tesseract.createWorker('rus+eng');
+    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
     const ocrResult = await Promise.race([
-      Tesseract.recognize(preparedBuf, 'rus+eng', { tessedit_pageseg_mode: '6' }),
+      worker.recognize(preparedBuf),
       new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 10000)),
     ]).catch(() => null);
 
@@ -394,6 +389,8 @@ async function extractOcrCaption(buffer) {
   } catch (err) {
     console.warn('OCR caption failed:', err.message);
     return { nameFromPhoto: null, eventType: null, eventTypeRaw: null, rawCaption: '' };
+  } finally {
+    if (worker) await worker.terminate().catch(() => {});
   }
 }
 

@@ -24,66 +24,87 @@ const EN_MONTHS = {
   'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
 };
 
+function prepareText(raw) {
+  return raw
+    .replace(/(\d{2})1(\d{2}):(\d{2})/g, '$1:$2:$3')
+    .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
+    .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
+    .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
+    .replace(/г[;,]/g, 'г.');
+}
+
+function tryExtract(text) {
+  const t = prepareText(text);
+
+  const full = t.match(/(\d{1,2})\s*([а-яёa-z]{3,})\s*(\d{4})[^0-9]+(\d{1,2}):(\d{2}):(\d{2})/i);
+  if (full) {
+    const key  = full[2].toLowerCase().slice(0, 3);
+    const mNum = RU_MONTHS[key] || EN_MONTHS[key];
+    if (mNum) return { found: true, day: full[1], month: mNum, year: full[3], h: full[4], m: full[5], s: full[6] };
+  }
+
+  const time = t.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+  const dmy  = t.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  const ymd  = t.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
+  if (time && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: dmy[3], h: time[1], m: time[2], s: time[3] };
+  if (time && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: time[1], m: time[2], s: time[3] };
+  return { found: false };
+}
+
+function toIso({ day, month, year, h, m, s }) {
+  const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
+                             parseInt(h), parseInt(m), parseInt(s));
+  return new Date(moscowMs - 3 * 3600 * 1000).toISOString();
+}
+
+async function ocrBuffer(buf, worker) {
+  const r = await Promise.race([
+    worker.recognize(buf),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('OCR timeout')), 15000)),
+  ]).catch(() => null);
+  return r?.data?.text || '';
+}
+
 async function extractOcrTimestamp(buffer, worker) {
   try {
-    const preparedBuf = await sharp(buffer)
+    // Pass A: full image
+    const fullBuf = await sharp(buffer)
       .greyscale()
       .normalise()
       .resize({ width: 1600, withoutEnlargement: true, kernel: 'lanczos3' })
       .sharpen({ sigma: 1.5 })
       .toBuffer();
 
-    // Проход 1: числовая дата + время
-    const ocrResult = await Promise.race([
-      worker.recognize(preparedBuf),
-      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 15000)),
-    ]).catch(() => null);
+    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
+    const resA = tryExtract(await ocrBuffer(fullBuf, worker));
+    if (resA.found) return toIso(resA);
 
-    const numText = ocrResult?.data?.text || '';
+    // Pass B: corner crops (right 60% × top/bottom 30%)
+    const meta  = await sharp(buffer).metadata();
+    const cropL = Math.floor(meta.width * 0.40);
+    const cropW = meta.width - cropL;
+    const cornH = Math.floor(meta.height * 0.30);
 
-    const timeMatch = numText.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-    if (!timeMatch) return null;
-    const [, h, m, s] = timeMatch;
+    const makeCornerBuf = (top) =>
+      sharp(buffer)
+        .extract({ left: cropL, top, width: cropW, height: cornH })
+        .greyscale()
+        .normalise()
+        .resize({ width: 900, kernel: 'lanczos3' })
+        .sharpen({ sigma: 1.5 })
+        .toBuffer();
 
-    const dateMatchDMY = numText.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
-    const dateMatchYMD = numText.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
+    const resTop = tryExtract(await ocrBuffer(await makeCornerBuf(0), worker));
+    if (resTop.found) return toIso(resTop);
 
-    let day, month, year;
+    const resBot = tryExtract(await ocrBuffer(await makeCornerBuf(meta.height - cornH), worker));
+    if (resBot.found) return toIso(resBot);
 
-    if (dateMatchDMY) {
-      [, day, month, year] = dateMatchDMY;
-    } else if (dateMatchYMD) {
-      [, year, month, day] = dateMatchYMD;
-    } else {
-      // Проход 2: имена месяцев — тот же worker с PSM 11 (сканирует весь кадр)
-      await worker.setParameters({ tessedit_pageseg_mode: '11' }).catch(() => {});
-      const ocrRus = await Promise.race([
-        worker.recognize(preparedBuf),
-        new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 15000)),
-      ]).catch(() => null);
-      await worker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
-
-      const rusText = ocrRus?.data?.text || '';
-      const mMatch = rusText.match(/(\d{1,2})\s+([а-яёa-z]{3,})[а-яёa-z]*\.?,?\s+(\d{4})/i);
-      if (mMatch) {
-        const key  = mMatch[2].toLowerCase().slice(0, 3);
-        const mNum = RU_MONTHS[key] || EN_MONTHS[key];
-        if (mNum) {
-          day   = mMatch[1];
-          month = String(mNum);
-          year  = mMatch[3];
-        }
-      }
-    }
-
-    if (!day || !month || !year) return null;
-
-    const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
-                               parseInt(h), parseInt(m), parseInt(s));
-    const utcMs = moscowMs - 3 * 3600 * 1000;
-    return new Date(utcMs).toISOString();
+    return null;
   } catch {
     return null;
+  } finally {
+    await worker.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {});
   }
 }
 
