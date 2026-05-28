@@ -116,9 +116,19 @@ async function downloadPhoto(photoUrl) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function updateEvent(eventId, photoTimestamp, newStatus) {
+async function updateEvent(eventId, photoTimestamp, newStatus, currentFlags) {
   const body = { photo_timestamp: photoTimestamp };
   if (newStatus) body.status = newStatus;
+
+  // Clear timestamp-related flags now that we have a real OCR timestamp.
+  // Keeps other flags (face_mismatch, double_shift, incomplete day, etc.) intact.
+  if (currentFlags && currentFlags.length > 0) {
+    const TIMESTAMP_FLAGS = new Set(['no_photo_time', 'time_from_telegram']);
+    const remaining = currentFlags.filter(f => !TIMESTAMP_FLAGS.has(f));
+    if (remaining.length !== currentFlags.length) {
+      body.fraud_flags = remaining;
+    }
+  }
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}&status=in.(done,needs_review,pending)`, {
     method: 'PATCH',
@@ -150,7 +160,7 @@ async function main() {
 
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=2000`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at,fraud_flags&limit=2000`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -193,7 +203,7 @@ async function main() {
         console.log(`  ✏️  Event ${ev.id}: ${ev.photo_timestamp || 'null'} → ${ocrTime}`);
 
         const newStatus = (ev.status === 'done' || ev.status === 'needs_review') ? 'pending' : null;
-        await updateEvent(ev.id, ocrTime, newStatus);
+        await updateEvent(ev.id, ocrTime, newStatus, ev.fraud_flags);
         updated++;
       } catch (err) {
         console.warn(`  ⚠️  Event ${ev.id}: ${err.message}`);
