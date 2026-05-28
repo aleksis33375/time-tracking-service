@@ -716,7 +716,24 @@ def finalize_event(
             "fraud_flags": fraud_flags,
         }
 
-    sb_patch(f"/rest/v1/events?id=eq.{event_id}", body)
+    result = sb_patch(f"/rest/v1/events?id=eq.{event_id}", body, prefer="return=representation")
+    expected_status = "needs_review" if go_review else "done"
+    if isinstance(result, list) and result:
+        actual = result[0].get("status")
+        if actual != expected_status:
+            print(f"[FINALIZE WARN] event {event_id}: expected {expected_status}, got {actual}", flush=True)
+            try:
+                requests.post(
+                    f"{SUPABASE_URL}/rest/v1/logs",
+                    headers=HEADERS,
+                    json={"level": "error", "source": "ai-worker", "message": "finalize status mismatch",
+                          "meta": {"event_id": event_id, "expected": expected_status, "actual": actual}},
+                    timeout=10,
+                )
+            except Exception:
+                pass
+    elif not isinstance(result, list):
+        print(f"[FINALIZE WARN] event {event_id}: PATCH returned non-list: {str(result)[:100]}", flush=True)
 
 # ── п.14 Telegram-уведомление руководителю ───────────────────────────────────
 
