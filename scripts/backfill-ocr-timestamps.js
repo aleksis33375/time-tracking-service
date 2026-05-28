@@ -120,9 +120,12 @@ async function updateEvent(eventId, photoTimestamp, newStatus, currentFlags) {
   const body = { photo_timestamp: photoTimestamp };
   if (newStatus) body.status = newStatus;
 
-  // Clear timestamp-related flags now that we have a real OCR timestamp.
-  // Keeps other flags (face_mismatch, double_shift, incomplete day, etc.) intact.
-  if (currentFlags && currentFlags.length > 0) {
+  if (newStatus === 'pending') {
+    // Сброс к pending означает полную переоценку — очищаем все флаги.
+    // ai-worker пересчитает double_shift, face_mismatch и др. с новым корректным timestamp.
+    body.fraud_flags = [];
+  } else if (currentFlags && currentFlags.length > 0) {
+    // Просто обновляем timestamp (статус не меняется) — убираем только timestamp-флаги.
     const TIMESTAMP_FLAGS = new Set(['no_photo_time', 'time_from_telegram']);
     const remaining = currentFlags.filter(f => !TIMESTAMP_FLAGS.has(f));
     if (remaining.length !== currentFlags.length) {
