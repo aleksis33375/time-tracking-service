@@ -171,6 +171,18 @@ async function main() {
 
         if (!ocrTime) continue;
 
+        // Отклоняем даты в будущем — явная ошибка OCR
+        if (new Date(ocrTime) > new Date()) {
+          console.warn(`  ⚠️  Event ${ev.id}: future date rejected (${ocrTime})`);
+          continue;
+        }
+
+        // Отклоняем даты раньше 2026-01-01 — тоже явная ошибка OCR
+        if (new Date(ocrTime) < new Date('2026-01-01T00:00:00Z')) {
+          console.warn(`  ⚠️  Event ${ev.id}: implausible date rejected (${ocrTime})`);
+          continue;
+        }
+
         // Если photo_timestamp был null — всегда обновляем
         const hadNoTimestamp = !ev.photo_timestamp;
         if (!hadNoTimestamp) {
