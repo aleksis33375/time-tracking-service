@@ -150,7 +150,7 @@ async function main() {
 
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at&limit=2000`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);

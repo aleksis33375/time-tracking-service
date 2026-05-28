@@ -2173,7 +2173,7 @@
       const endUTC   = new Date(Date.UTC(y, m + 1, 1) - 3 * 3600000 - 1).toISOString();
 
       const [events, emps, anomalies] = await Promise.all([
-        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.done&order=photo_timestamp.asc&limit=5000`),
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=in.(done,needs_review)&order=photo_timestamp.asc&limit=5000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team,daily_rate,hourly_rate&deleted_at=is.null'),
         guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,fraud_flags,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.needs_review&order=photo_timestamp.desc&limit=1000`),
       ]);
