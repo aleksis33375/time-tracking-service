@@ -92,6 +92,8 @@ def sb_patch(path: str, body: dict, prefer: str = "return=minimal") -> list | di
             json=body,
             timeout=15,
         )
+        if not res.ok:
+            print(f"[PATCH ERROR] {res.status_code} {path}: {res.text[:300]}", flush=True)
         return res.json() if prefer == "return=representation" else {}
     except requests.exceptions.RequestException as e:
         print(f"[NETWORK ERROR] PATCH {path}: {e}", flush=True)
