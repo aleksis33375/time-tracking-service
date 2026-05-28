@@ -93,7 +93,19 @@ def sb_patch(path: str, body: dict, prefer: str = "return=minimal") -> list | di
             timeout=15,
         )
         if not res.ok:
-            print(f"[PATCH ERROR] {res.status_code} {path}: {res.text[:300]}", flush=True)
+            msg = f"[PATCH ERROR] {res.status_code} {path}: {res.text[:300]}"
+            print(msg, flush=True)
+            # Write to Supabase logs so error is visible without GitHub Actions access
+            try:
+                requests.post(
+                    f"{SUPABASE_URL}/rest/v1/logs",
+                    headers=HEADERS,
+                    json={"level": "error", "source": "ai-worker", "message": "PATCH failed",
+                          "meta": {"status": res.status_code, "path": path, "body": res.text[:300]}},
+                    timeout=10,
+                )
+            except Exception:
+                pass
         return res.json() if prefer == "return=representation" else {}
     except requests.exceptions.RequestException as e:
         print(f"[NETWORK ERROR] PATCH {path}: {e}", flush=True)
