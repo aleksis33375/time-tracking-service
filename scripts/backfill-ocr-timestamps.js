@@ -162,13 +162,21 @@ async function main() {
   const worker = await Tesseract.createWorker('rus+eng');
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at,fraud_flags&limit=2000`,
-      { headers: HEADERS }
-    );
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-
-    const events = await res.json();
+    // BUG-050: пагинация — Supabase отдаёт максимум 1000 строк за раз
+    const PAGE_SIZE = 1000;
+    let offset = 0;
+    let events = [];
+    while (true) {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at,fraud_flags&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+        { headers: HEADERS }
+      );
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      const page = await res.json();
+      events = events.concat(page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
     console.log(`📦 Found ${events.length} events with photos`);
 
     let updated = 0;

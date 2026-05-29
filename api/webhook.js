@@ -138,6 +138,15 @@ async function handlePhoto(msg) {
     }
   }
 
+  // BUG-045: дедупликация — Telegram может повторить update при недоступности webhook
+  if (photoUrl) {
+    const existing = await supabaseFetch(`/rest/v1/events?photo_url=eq.${encodeURIComponent(photoUrl)}&select=id&limit=1`);
+    if (Array.isArray(existing) && existing.length > 0) {
+      await logToSupabase('warn', 'webhook-handler', 'Duplicate Telegram update skipped', { chatId, messageId });
+      return;
+    }
+  }
+
   if (!stampTimestamp) {
     await logToSupabase('warn', 'webhook-handler',
       'No photo timestamp (no EXIF, no OCR date+time). Saving as pending.', {
@@ -146,7 +155,7 @@ async function handlePhoto(msg) {
   }
 
   // Всегда status:'pending' — даже если штамп не прочитался
-  await insertEvent({
+  const insertResult = await insertEvent({
     photo_url:       photoUrl,
     photo_timestamp: stampTimestamp,
     status:          'pending',
@@ -155,6 +164,22 @@ async function handlePhoto(msg) {
     event_type_raw:  caption.eventTypeRaw,
     fraud_flags:     stampTimestamp ? [] : ['no_photo_time'],
   });
+
+  // BUG-044: если insert не прошёл — удаляем фото из Storage чтобы не было "осиротевших" файлов
+  if (insertResult && (insertResult.message || insertResult.code) && photoUrl) {
+    const slash  = photoUrl.indexOf('/');
+    const bucket = photoUrl.slice(0, slash);
+    const obj    = photoUrl.slice(slash + 1);
+    await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${obj}`, {
+      method:  'DELETE',
+      headers: {
+        apikey:        SUPABASE_SERVICE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      },
+    }).catch(() => {});
+    await logToSupabase('error', 'webhook-handler', 'insertEvent failed — Storage file deleted', { chatId, messageId });
+    return;
+  }
 
   await logToSupabase('info', 'webhook-handler', 'Event created', {
     name:        caption.nameFromPhoto,

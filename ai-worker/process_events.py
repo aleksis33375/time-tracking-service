@@ -829,9 +829,9 @@ def main() -> None:
             bootstrapped = bootstrap_face_embedding(employee, photo_url)
             print(f"     bootstrap embedding: {'ok' if bootstrapped else 'failed'}", flush=True)
             if not bootstrapped:
-                # Нет лица на фото → отклоняем событие полностью
+                # Нет лица на фото → на проверку, не duplicate
                 reject_body = {
-                    "status":      "duplicate",
+                    "status":      "needs_review",
                     "fraud_flags": ["no_face_detected"],
                     "employee_id": employee["id"],
                 }
@@ -862,6 +862,8 @@ def main() -> None:
         event_type = resolve_event_type(event)
         print(f"     event_type: {event_type}", flush=True)
         if event_type is None:
+            if "unknown_event_type" not in fraud_flags:
+                fraud_flags.append("unknown_event_type")
             go_review = True   # неизвестный тип → тоже на проверку
 
         # п.9 Расчёт часов (только если сотрудник найден и тип определён)
@@ -926,6 +928,8 @@ def main() -> None:
 
         # п.10 Неполный день → needs_review (п.11: выходные = будние, спецкода нет)
         if is_incomplete_day(employee, event_type, hours):
+            if "incomplete_day" not in fraud_flags:
+                fraud_flags.append("incomplete_day")
             go_review = True
             print(f"     incomplete day → needs_review", flush=True)
 

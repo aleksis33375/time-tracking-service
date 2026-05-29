@@ -27,13 +27,13 @@ export default async function handler(req, res) {
   if (!authCheck.ok) return res.status(401).json({ error: 'Invalid token' });
 
   const { path } = req.query;
-  if (!path || !path.startsWith('photos/') || path.includes('..')) {
+  // Принимаем только строго "photos/{chatId}/{messageId}.jpg" — chatId и messageId это числа
+  const PATH_RE = /^photos\/\d+\/\d+\.jpg$/;
+  if (!path || !PATH_RE.test(path)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
   const slash = path.indexOf('/');
-  if (slash === -1) return res.status(400).json({ error: 'Invalid path format' });
-
   const bucket = path.slice(0, slash);
   const obj    = path.slice(slash + 1);
 

@@ -1743,7 +1743,7 @@
       document.getElementById('rv-sub').textContent          = 'Загрузка...';
 
       const [events, emps] = await Promise.all([
-        guardedFetch('/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review&order=photo_timestamp.desc&limit=500'),
+        guardedFetch('/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review&order=photo_timestamp.desc&limit=2000'),
         guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null&order=team.asc,display_name.asc'),
       ]);
 
