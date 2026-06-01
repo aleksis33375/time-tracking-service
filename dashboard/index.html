@@ -3532,8 +3532,11 @@
               const warn = cell.fraud ? ' ⚠️' : '';
               return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${Math.round(cell.hours*100)/100}${warn}</td>`;
             }
-            // Событие есть, но часы не посчитаны (неполный день)
-            return `<td class="ts-day" style="${wkndStyle}background:var(--warn-bg);color:var(--warning);"${photoAttr}>?</td>`;
+            // Событие есть, но часы не посчитаны (неполный день или needs_review)
+            const incStyle = cell.review
+              ? 'background:var(--danger-bg);color:var(--danger);font-weight:600;'
+              : `${wkndStyle}background:var(--warn-bg);color:var(--warning);`;
+            return `<td class="ts-day" style="${incStyle}"${photoAttr}>?</td>`;
           }).join('');
 
           const prevHours = prevMap[emp.id] || 0;
