@@ -824,7 +824,11 @@ def main() -> None:
         photo_url = event.get("photo_url") or ""
         face_timed_out = False
 
-        if employee and not employee.get("face_embedding"):
+        if not photo_url:
+            # Фото не было загружено — пропускаем распознавание, продолжаем обработку
+            face_match = None
+            print(f"     no photo — skipping face recognition", flush=True)
+        elif employee and not employee.get("face_embedding"):
             # Первое фото этого сотрудника — сохраняем как эталон
             bootstrapped = bootstrap_face_embedding(employee, photo_url)
             print(f"     bootstrap embedding: {'ok' if bootstrapped else 'failed'}", flush=True)
@@ -853,6 +857,8 @@ def main() -> None:
 
         # п.7 Сборка fraud_flags, маршрутизация на needs_review
         fraud_flags = build_fraud_flags(event, face_match)
+        if not photo_url and "no_photo" not in fraud_flags:
+            fraud_flags.append("no_photo")  # страховка: webhook мог не поставить флаг
         if face_timed_out and "face_timeout" not in fraud_flags:
             fraud_flags.append("face_timeout")
         go_review    = needs_review(employee, face_match, fraud_flags)

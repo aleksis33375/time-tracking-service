@@ -740,6 +740,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <select class="input" id="rv-filter-fraud" style="width:210px;" onchange="renderReview()">
           <option value="">Все флаги</option>
+          <option value="no_photo">Нет фото</option>
           <option value="face_mismatch">Лицо не совпадает</option>
           <option value="double_shift">Двойная смена</option>
           <option value="duplicate">Дубль</option>
@@ -1878,8 +1879,8 @@
       // ── Обычная таблица ────────────────────────────────────────────────────
       document.getElementById('rv-table-wrap').style.display = hasRegular ? '' : 'none';
 
-      const FRAUD_LABEL = { face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено', time_from_telegram: 'Время из Telegram', no_photo_time: 'Время не распознано' };
-      const FRAUD_COLOR = { face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280', no_photo_time: '#DC2626' };
+      const FRAUD_LABEL = { no_photo: 'Нет фото', face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено', time_from_telegram: 'Время из Telegram', no_photo_time: 'Время не распознано' };
+      const FRAUD_COLOR = { no_photo: '#DC2626', face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280', no_photo_time: '#DC2626' };
       const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';

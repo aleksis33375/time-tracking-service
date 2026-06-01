@@ -140,7 +140,10 @@ async function handlePhoto(msg) {
     name_from_photo: caption.nameFromPhoto,
     event_type:      caption.eventType,
     event_type_raw:  caption.eventTypeRaw,
-    fraud_flags:     stampTimestamp ? [] : ['no_photo_time'],
+    fraud_flags:     [
+      ...(!photoUrl    ? ['no_photo']      : []),
+      ...(!stampTimestamp ? ['no_photo_time'] : []),
+    ],
   });
 
   // BUG-044: если insert не прошёл — удаляем фото из Storage чтобы не было "осиротевших" файлов
