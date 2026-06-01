@@ -13,6 +13,8 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BOT_TOKEN            = process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_SECRET       = process.env.TELEGRAM_WEBHOOK_SECRET;
 const TG_API               = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const GITHUB_TOKEN         = process.env.GITHUB_TOKEN;
+const GITHUB_REPO          = process.env.GITHUB_REPO; // формат: owner/repo
 
 const SUPABASE_HEADERS = {
   apikey:         SUPABASE_SERVICE_KEY,
@@ -169,6 +171,9 @@ async function handlePhoto(msg) {
     time_source: timeSource,
     photo_time:  stampTimestamp,
   });
+
+  // Запускаем AI-worker немедленно — не ждём ненадёжного cron
+  await triggerAiWorker();
 }
 
 // ── Caption parser ────────────────────────────────────────────────────────────
@@ -371,6 +376,27 @@ async function logToSupabase(level, source, message, meta = {}) {
     });
   } catch (err) {
     console.error('logToSupabase failed:', err);
+  }
+}
+
+// ── GitHub Actions trigger ────────────────────────────────────────────────────
+
+async function triggerAiWorker() {
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+  try {
+    await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/ai-worker.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept':        'application/vnd.github+json',
+        'Content-Type':  'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    console.log('GitHub Actions ai-worker triggered');
+  } catch (err) {
+    console.error('triggerAiWorker failed:', err.message);
   }
 }
 
