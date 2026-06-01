@@ -140,9 +140,10 @@ async function updateEvent(eventId, photoTimestamp, currentFlags) {
 async function main() {
   console.log('🔄 OCR Worker started');
 
-  const worker = await Tesseract.createWorker('rus+eng');
-
+  let worker = null;
   try {
+    worker = await Tesseract.createWorker('rus+eng');
+
     const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags&limit=50`,
@@ -183,8 +184,9 @@ async function main() {
     // Не останавливаем pipeline — AI-worker должен запуститься в любом случае
     console.error('❌ OCR Worker failed:', err.message);
   } finally {
-    await worker.terminate();
+    if (worker) await worker.terminate().catch(() => {});
   }
 }
 
-main();
+// .catch гарантирует что необработанное исключение не даёт exit code 1
+main().catch(err => console.error('❌ OCR Worker fatal:', err.message));
