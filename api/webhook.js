@@ -6,7 +6,6 @@
 import { timingSafeEqual } from 'crypto';
 import sharp from 'sharp';
 import exifReader from 'exif-reader';
-import Tesseract from 'tesseract.js';
 import { waitUntil } from '@vercel/functions';
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -96,7 +95,6 @@ async function handlePhoto(msg) {
       timeSource = 'exif';
     }
 
-    // Сжимаем до ~1200px — OCR запускается на сжатом фото
     compressedBuffer = await compressPhoto(originalBuffer);
     const originalKb   = Math.round(originalBuffer.length   / 1024);
     const compressedKb = Math.round(compressedBuffer.length / 1024);
@@ -105,30 +103,10 @@ async function handlePhoto(msg) {
     await logToSupabase('warn', 'webhook-handler', `Photo processing failed: ${err.message}`, { chatId, messageId });
   }
 
-  // OCR timestamp — только если EXIF не нашёл дату
-  if (!stampTimestamp && compressedBuffer) {
-    const ocr = await extractOcrTimestamp(compressedBuffer);
-    if (ocr) {
-      stampTimestamp = ocr;
-      timeSource = 'ocr';
-    }
-  }
-
   console.log(`time_source: ${timeSource}, stamp: ${stampTimestamp || 'none'}`);
 
-  // Третий проход: имя + тип события с фото (rus+eng), fallback — Telegram caption
-  let caption = parseCaptionText(msg.caption || '');
-  if (compressedBuffer) {
-    const ocrCaption = await extractOcrCaption(compressedBuffer);
-    if (ocrCaption.nameFromPhoto || ocrCaption.eventType) {
-      caption = {
-        nameFromPhoto: ocrCaption.nameFromPhoto || caption.nameFromPhoto,
-        eventType:     ocrCaption.eventType     || caption.eventType,
-        eventTypeRaw:  ocrCaption.eventTypeRaw  || caption.eventTypeRaw,
-        rawCaption:    ocrCaption.rawCaption,
-      };
-    }
-  }
+  // Имя и тип события берём из подписи Telegram-сообщения
+  const caption = parseCaptionText(msg.caption || '');
   console.log('Caption:', caption);
 
   if (compressedBuffer) {
@@ -308,114 +286,6 @@ async function extractExifTimestamp(buffer) {
   } catch (err) {
     console.warn('EXIF parse failed:', err.message);
     return null;
-  }
-}
-
-const WH_RU_MONTHS = { 'янв':1,'фев':2,'мар':3,'апр':4,'май':5,'мая':5,'июн':6,'июл':7,'авг':8,'сен':9,'окт':10,'ноя':11,'дек':12 };
-const WH_EN_MONTHS = { 'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12 };
-
-function whPrepareText(raw) {
-  return raw
-    .replace(/(\d{2})1(\d{2}):(\d{2})/g, '$1:$2:$3')
-    .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
-    .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
-    .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
-    .replace(/г[;,]/g, 'г.');
-}
-
-function whTryExtract(text) {
-  const t = whPrepareText(text);
-  const full = t.match(/(\d{1,2})\s*([а-яёa-z]{3,})\s*(\d{4})[^0-9]+(\d{1,2}):(\d{2}):(\d{2})/i);
-  if (full) {
-    const mNum = WH_RU_MONTHS[full[2].toLowerCase().slice(0,3)] || WH_EN_MONTHS[full[2].toLowerCase().slice(0,3)];
-    if (mNum) return { found: true, day: full[1], month: mNum, year: full[3], h: full[4], m: full[5], s: full[6] };
-  }
-  const time = t.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-  const dmy  = t.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
-  const ymd  = t.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
-  if (time && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: dmy[3], h: time[1], m: time[2], s: time[3] };
-  if (time && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: time[1], m: time[2], s: time[3] };
-  return { found: false };
-}
-
-function whToIso({ day, month, year, h, m, s }) {
-  const moscowMs = Date.UTC(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(h), parseInt(m), parseInt(s));
-  return new Date(moscowMs - 3 * 3600 * 1000).toISOString();
-}
-
-async function extractOcrTimestamp(buffer) {
-  let worker;
-  try {
-    worker = await Tesseract.createWorker('rus+eng');
-    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
-
-    const ocr = async (buf) => {
-      const r = await Promise.race([
-        worker.recognize(buf),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
-      ]).catch(() => null);
-      return r?.data?.text || '';
-    };
-
-    // Pass A: full image
-    const fullBuf = await sharp(buffer)
-      .greyscale().normalise()
-      .resize({ width: 1600, withoutEnlargement: true, kernel: 'lanczos3' })
-      .sharpen({ sigma: 1.5 }).toBuffer();
-
-    const resA = whTryExtract(await ocr(fullBuf));
-    if (resA.found) { console.log('OCR A:', resA); return whToIso(resA); }
-
-    // Pass B: corner crops (right 60% × top/bottom 30%)
-    const meta  = await sharp(buffer).metadata();
-    const cropL = Math.floor(meta.width * 0.40);
-    const cropW = meta.width - cropL;
-    const cornH = Math.floor(meta.height * 0.30);
-
-    const cropBuf = (top) =>
-      sharp(buffer)
-        .extract({ left: cropL, top, width: cropW, height: cornH })
-        .greyscale().normalise()
-        .resize({ width: 900, kernel: 'lanczos3' })
-        .sharpen({ sigma: 1.5 }).toBuffer();
-
-    const resTop = whTryExtract(await ocr(await cropBuf(0)));
-    if (resTop.found) { console.log('OCR top-crop:', resTop); return whToIso(resTop); }
-
-    const resBot = whTryExtract(await ocr(await cropBuf(meta.height - cornH)));
-    if (resBot.found) { console.log('OCR bot-crop:', resBot); return whToIso(resBot); }
-
-    console.log('OCR: stamp not found');
-    return null;
-  } catch (err) {
-    console.warn('OCR failed:', err.message);
-    return null;
-  } finally {
-    if (worker) await worker.terminate().catch(() => {});
-  }
-}
-
-async function extractOcrCaption(buffer) {
-  let worker;
-  try {
-    const preparedBuf = await sharp(buffer)
-      .greyscale().normalise().sharpen({ sigma: 1.5 }).toBuffer();
-
-    worker = await Tesseract.createWorker('rus+eng');
-    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
-    const ocrResult = await Promise.race([
-      worker.recognize(preparedBuf),
-      new Promise((_, r) => setTimeout(() => r(new Error('OCR timeout')), 10000)),
-    ]).catch(() => null);
-
-    const text = ocrResult?.data?.text || '';
-    console.log('OCR caption text:', text.trim().slice(0, 120));
-    return parseCaptionText(text);
-  } catch (err) {
-    console.warn('OCR caption failed:', err.message);
-    return { nameFromPhoto: null, eventType: null, eventTypeRaw: null, rawCaption: '' };
-  } finally {
-    if (worker) await worker.terminate().catch(() => {});
   }
 }
 
