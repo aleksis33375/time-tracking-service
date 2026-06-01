@@ -490,17 +490,22 @@ def build_fraud_flags(event: dict, face_match: bool | None) -> list[str]:
     return flags
 
 
+# Флаги реального мошенничества → needs_review.
+# no_photo_time и incomplete_day — технические ограничения, не мошенничество → done.
+_FRAUD_REVIEW_FLAGS = {"face_mismatch", "double_shift", "no_photo", "face_timeout", "unknown_event_type"}
+
 def needs_review(employee: dict | None, face_match: bool | None, fraud_flags: list[str]) -> bool:
-    """Запись должна идти на ручную проверку если:
+    """Запись идёт на ручную проверку ТОЛЬКО при реальных аномалиях:
     - сотрудник не найден
     - лицо явно не совпало
-    - есть любые fraud_flags
+    - fraud-флаг из _FRAUD_REVIEW_FLAGS
+    no_photo_time и incomplete_day — информационные флаги, не блокируют автоматику.
     """
     if employee is None:
         return True
     if face_match is False:
         return True
-    if fraud_flags:
+    if any(f in _FRAUD_REVIEW_FLAGS for f in fraud_flags):
         return True
     return False
 
@@ -872,12 +877,12 @@ def main() -> None:
                 fraud_flags.append("unknown_event_type")
             go_review = True   # неизвестный тип → тоже на проверку
 
-        # п.9 Расчёт часов (только если сотрудник найден и тип определён)
+        # п.9 Расчёт часов — всегда если сотрудник и тип известны
         hours             = None
         paired_arrival_id = None
         is_double_shift   = False
         is_duplicate      = False
-        if employee and event_type and not go_review:
+        if employee and event_type:
             hours, paired_arrival_id, is_double_shift, is_duplicate = calculate_hours(
                 employee["id"], event
             )
@@ -932,12 +937,11 @@ def main() -> None:
             go_review = True
             print(f"     double shift detected → needs_review", flush=True)
 
-        # п.10 Неполный день → needs_review (п.11: выходные = будние, спецкода нет)
+        # п.10 Неполный день — информационный флаг, НЕ блокирует автоматику
         if is_incomplete_day(employee, event_type, hours):
             if "incomplete_day" not in fraud_flags:
                 fraud_flags.append("incomplete_day")
-            go_review = True
-            print(f"     incomplete day → needs_review", flush=True)
+            print(f"     incomplete day — flagged, auto-approved", flush=True)
 
         # п.12/13 Финализация события
         finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
