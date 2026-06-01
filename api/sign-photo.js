@@ -27,8 +27,11 @@ export default async function handler(req, res) {
   if (!authCheck.ok) return res.status(401).json({ error: 'Invalid token' });
 
   const { path } = req.query;
-  // Принимаем только строго "photos/{chatId}/{messageId}.jpg" — chatId и messageId это числа
-  const PATH_RE = /^photos\/\d+\/\d+\.jpg$/;
+  // Допустимые пути:
+  //   photos/{chatId}/{messageId}.jpg   — обычные фото из Telegram
+  //   photos/manual/{uuid}.png          — фото загруженные вручную
+  //   ref-photos/{uuid}/{uuid}.{ext}    — эталонные фото сотрудников
+  const PATH_RE = /^(photos\/(\d+\/\d+\.jpg|manual\/[0-9a-f-]{36}\.png)|ref-photos\/[0-9a-f-]+\/[0-9a-f-]+\.(jpg|jpeg|png|webp))$/;
   if (!path || !PATH_RE.test(path)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
