@@ -57,6 +57,14 @@ function toIso({ day, month, year, h, m, s }) {
   return new Date(moscowMs - 3 * 3600 * 1000).toISOString();
 }
 
+function isValidDate(isoStr) {
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return false;
+  if (d > new Date()) return false;                    // будущее → ошибка OCR
+  if (d < new Date('2026-01-01T00:00:00Z')) return false; // слишком старое → ошибка OCR
+  return true;
+}
+
 async function ocrBuffer(buf, worker) {
   const r = await Promise.race([
     worker.recognize(buf),
@@ -67,7 +75,7 @@ async function ocrBuffer(buf, worker) {
 
 async function extractOcrTimestamp(buffer, worker) {
   try {
-    // Pass A: full image
+    // Pass A: полное изображение
     const fullBuf = await sharp(buffer)
       .greyscale()
       .normalise()
@@ -79,7 +87,7 @@ async function extractOcrTimestamp(buffer, worker) {
     const resA = tryExtract(await ocrBuffer(fullBuf, worker));
     if (resA.found) return toIso(resA);
 
-    // Pass B: corner crops (right 60% × top/bottom 30%)
+    // Pass B: угловые вырезки (правые 60% × верх/низ 30%)
     const meta  = await sharp(buffer).metadata();
     const cropL = Math.floor(meta.width * 0.40);
     const cropW = meta.width - cropL;
@@ -115,11 +123,16 @@ async function downloadPhoto(photoUrl) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function updateEvent(eventId, photoTimestamp) {
+async function updateEvent(eventId, photoTimestamp, currentFlags) {
+  // Убираем no_photo_time — время успешно считано с фото
+  const newFlags = (currentFlags || []).filter(f => f !== 'no_photo_time');
   const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}`, {
     method: 'PATCH',
     headers: HEADERS,
-    body: JSON.stringify({ photo_timestamp: photoTimestamp }),
+    body: JSON.stringify({
+      photo_timestamp: photoTimestamp,
+      fraud_flags: newFlags,
+    }),
   });
   if (!res.ok) throw new Error(`Update failed: ${res.status}`);
 }
@@ -132,7 +145,7 @@ async function main() {
   try {
     const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url&limit=50`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags&limit=50`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -147,9 +160,17 @@ async function main() {
         const photo = await downloadPhoto(ev.photo_url);
         const ocrTime = await extractOcrTimestamp(photo, worker);
 
-        if (!ocrTime) continue;
+        if (!ocrTime) {
+          console.log(`  — Event ${ev.id}: OCR found no timestamp`);
+          continue;
+        }
 
-        await updateEvent(ev.id, ocrTime);
+        if (!isValidDate(ocrTime)) {
+          console.warn(`  ⚠️  Event ${ev.id}: invalid/implausible date rejected (${ocrTime})`);
+          continue;
+        }
+
+        await updateEvent(ev.id, ocrTime, ev.fraud_flags);
         updated++;
         console.log(`  ✏️  Event ${ev.id}: → ${ocrTime}`);
       } catch (err) {
@@ -157,10 +178,10 @@ async function main() {
       }
     }
 
-    console.log(`OCR Worker: ${updated}/${events.length} events updated`);
+    console.log(`✅ OCR Worker: ${updated}/${events.length} events updated`);
   } catch (err) {
+    // Не останавливаем pipeline — AI-worker должен запуститься в любом случае
     console.error('❌ OCR Worker failed:', err.message);
-    process.exit(1);
   } finally {
     await worker.terminate();
   }

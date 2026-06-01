@@ -28,6 +28,7 @@ jobs:
         run: npm install
 
       - name: OCR — extract timestamps from new photos
+        continue-on-error: true   # AI-worker запускается даже если OCR упал
         run: node scripts/ocr-worker.js
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
