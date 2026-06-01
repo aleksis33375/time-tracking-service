@@ -31,7 +31,7 @@ export default async function handler(req, res) {
   //   photos/{chatId}/{messageId}.jpg   — обычные фото из Telegram
   //   photos/manual/{uuid}.png          — фото загруженные вручную
   //   ref-photos/{uuid}/{uuid}.{ext}    — эталонные фото сотрудников
-  const PATH_RE = /^(photos\/(\d+\/\d+\.jpg|manual\/[0-9a-f-]{36}\.png)|ref-photos\/[0-9a-f-]+\/[0-9a-f-]+\.(jpg|jpeg|png|webp))$/;
+  const PATH_RE = /^(photos\/(-?\d+\/\d+\.jpg|manual\/[0-9a-f-]{36}\.png)|ref-photos\/[0-9a-f-]+\/[0-9a-f-]+\.(jpg|jpeg|png|webp))$/;
   if (!path || !PATH_RE.test(path)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
