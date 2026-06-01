@@ -493,7 +493,7 @@
           <div class="stat-value" id="stat-today">—</div>
           <div class="stat-sub">сотрудников</div>
         </div>
-        <div class="card stat-card clickable" onclick="goTo('review')" title="Перейти в Проверку">
+        <div class="card stat-card clickable" onclick="goTo('review',{todayOnly:true})" title="Перейти в Проверку">
           <div class="stat-label">Требуют проверки</div>
           <div class="stat-value" style="color:var(--danger)" id="stat-review">—</div>
           <div class="stat-sub">за сегодня</div>
@@ -1375,9 +1375,11 @@
 
     /* ─── Navigation ────────────────────────────────────────────────────── */
     let rvHighlightEmpId = null;   // employee_id для подсветки после перехода на Проверку
+    let rvTodayOnly = false;       // фильтр «только сегодня» для раздела Проверка
 
     function goTo(page, options = {}) {
       if (options.highlightEmployeeId) rvHighlightEmpId = options.highlightEmployeeId;
+      if (options.todayOnly !== undefined) rvTodayOnly = options.todayOnly;
       const btn = document.querySelector(`[data-page="${page}"]`);
       navigateTo(page, btn);
     }
@@ -1465,7 +1467,7 @@
         badge.textContent    = `⚠️ ${todayReview} требует проверки`;
         badge.style.display  = '';
         badge.style.cursor   = 'pointer';
-        badge.onclick        = () => goTo('review');
+        badge.onclick        = () => goTo('review', {todayOnly: true});
       } else {
         badge.style.display  = 'none';
       }
@@ -1743,8 +1745,20 @@
       document.getElementById('rv-table-wrap').style.display = 'none';
       document.getElementById('rv-sub').textContent          = 'Загрузка...';
 
+      let dateFilter = '';
+      let todayLabel = '';
+      if (rvTodayOnly) {
+        const mskNow = new Date(Date.now() + 3 * 3600000);
+        const todayMsk = mskNow.toISOString().slice(0, 10);
+        const todayStartUTC = new Date(todayMsk + 'T00:00:00+03:00').toISOString();
+        const todayEndUTC   = new Date(todayMsk + 'T23:59:59+03:00').toISOString();
+        dateFilter = `&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}`;
+        todayLabel = ' — только сегодня';
+        rvTodayOnly = false;
+      }
+
       const [events, emps] = await Promise.all([
-        guardedFetch('/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review&order=photo_timestamp.desc&limit=2000'),
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review${dateFilter}&order=photo_timestamp.desc&limit=2000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null&order=team.asc,display_name.asc'),
       ]);
 
@@ -1758,8 +1772,8 @@
 
       const total = rvRawRows.length;
       document.getElementById('rv-sub').textContent = total
-        ? `${total} ${total === 1 ? 'запись требует' : total < 5 ? 'записи требуют' : 'записей требуют'} проверки`
-        : 'Все записи проверены';
+        ? `${total} ${total === 1 ? 'запись требует' : total < 5 ? 'записи требуют' : 'записей требуют'} проверки${todayLabel}`
+        : `Все записи проверены${todayLabel}`;
 
       document.getElementById('rv-loading').style.display = 'none';
       renderReview();
@@ -1902,7 +1916,7 @@
           ? `<a href="#" onclick="attShowPhoto('${escHtml(ev.photo_url)}');return false;" style="color:var(--accent);font-size:18px;text-decoration:none;" title="Открыть фото">🖼</a>`
           : '<span style="color:#D1D5DB;">—</span>';
 
-        html += `<tr data-emp-id="${escHtml(ev.employee_id||'')}" style="border-bottom:1px solid var(--border);background:var(--danger-bg);">
+        html += `<tr data-emp-id="${escHtml(ev.employee_id || ('name:' + (ev.name_from_photo||'')))}" style="border-bottom:1px solid var(--border);background:var(--danger-bg);">
           <td style="padding:9px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;">${fmtDT(ev.photo_timestamp)}</td>
           <td style="padding:9px 10px;color:var(--muted);">${escHtml(ev.name_from_photo || '—')}</td>
           <td style="padding:9px 10px;font-weight:500;">${escHtml(empName)}</td>
