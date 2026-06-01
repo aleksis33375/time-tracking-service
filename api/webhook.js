@@ -111,6 +111,14 @@ async function handlePhoto(msg) {
   const caption = parseCaptionText(msg.caption || '');
   console.log('Caption:', caption);
 
+  // Фото без подписи "начало/конец смены" — игнорируем полностью
+  if (!caption.eventType) {
+    await logToSupabase('info', 'webhook-handler', 'Skipped: no event type in caption', {
+      chatId, messageId, caption: caption.rawCaption || '',
+    });
+    return;
+  }
+
   if (compressedBuffer) {
     photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
     if (!photoUrl) {
