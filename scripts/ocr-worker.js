@@ -30,7 +30,9 @@ function prepareText(raw) {
     .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
-    .replace(/г[;,]/g, 'г.');
+    .replace(/г[;,]/g, 'г.')
+    .replace(/([а-яё]{3,4})\.\s*/gi, '$1 ')   // "июн. " → "июн "
+    .replace(/(\d{4})\s*г\.\s*/g, '$1 ');      // "2026 г. " → "2026 "
 }
 
 function tryExtract(text) {
@@ -123,16 +125,21 @@ async function downloadPhoto(photoUrl) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function updateEvent(eventId, photoTimestamp, currentFlags) {
+async function updateEvent(eventId, photoTimestamp, currentFlags, eventStatus) {
   // Убираем no_photo_time — время успешно считано с фото
   const newFlags = (currentFlags || []).filter(f => f !== 'no_photo_time');
+  const patch = {
+    photo_timestamp: photoTimestamp,
+    fraud_flags:     newFlags,
+  };
+  // Если событие уже обработано — сбрасываем в pending, AI worker пересчитает часы
+  if (eventStatus === 'done') {
+    patch.status = 'pending';
+  }
   const res = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${eventId}`, {
     method: 'PATCH',
     headers: HEADERS,
-    body: JSON.stringify({
-      photo_timestamp: photoTimestamp,
-      fraud_flags: newFlags,
-    }),
+    body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`Update failed: ${res.status}`);
 }
@@ -144,9 +151,9 @@ async function main() {
   try {
     worker = await Tesseract.createWorker('rus+eng');
 
-    const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags&limit=50`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags,status,event_type&limit=200`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -171,7 +178,7 @@ async function main() {
           continue;
         }
 
-        await updateEvent(ev.id, ocrTime, ev.fraud_flags);
+        await updateEvent(ev.id, ocrTime, ev.fraud_flags, ev.status);
         updated++;
         console.log(`  ✏️  Event ${ev.id}: → ${ocrTime}`);
       } catch (err) {
