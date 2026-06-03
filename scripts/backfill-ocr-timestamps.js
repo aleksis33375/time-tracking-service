@@ -31,7 +31,9 @@ function prepareText(raw) {
     .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
-    .replace(/г[;,]/g, 'г.');
+    .replace(/г[;,]/g, 'г.')
+    .replace(/([а-яё]{3,4})\.\s*/gi, '$1 ')   // "июн. " → "июн "
+    .replace(/(\d{4})\s*г\.\s*/g, '$1 ');      // "2026 г. " → "2026 "
 }
 
 function tryExtract(text) {
