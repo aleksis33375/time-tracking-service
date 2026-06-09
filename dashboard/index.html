@@ -1894,7 +1894,7 @@
       document.getElementById('rv-table-wrap').style.display = hasRegular ? '' : 'none';
 
       const FRAUD_LABEL = { no_photo: 'Нет фото', face_mismatch: 'Лицо не совпадает', double_shift: 'Двойная смена', duplicate: 'Дубль', no_face_detected: 'Лицо не найдено', time_from_telegram: 'Время из Telegram', no_photo_time: 'Время не распознано' };
-      const FRAUD_COLOR = { no_photo: '#DC2626', face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280', no_photo_time: '#DC2626' };
+      const FRAUD_COLOR = { no_photo: '#DC2626', face_mismatch: '#DC2626', double_shift: '#0891B2', duplicate: '#D97706', no_face_detected: '#7C3AED', time_from_telegram: '#6B7280', no_photo_time: '#6B7280' };
       const TYPE_LABEL  = { arrival: '▶ Приход', departure: '■ Уход' };
 
       let html = '';
@@ -3328,6 +3328,9 @@
         return `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
       }
 
+      // Флаги, которые НЕ показывают ⚠️ в табеле — технические ограничения, не мошенничество
+      const INFORMATIONAL_FLAGS = new Set(['no_photo_time', 'incomplete_day', 'time_from_telegram']);
+
       // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url, double_shift, shift_hours, events }
       // Pair-walker: группируем события по сотруднику, сортируем по времени, строим пары arrival→departure.
       // Часы атрибутируем к дню ARRIVAL. Если arrival.hours == null (needs_review), берём из парного departure.
@@ -3374,7 +3377,7 @@
               photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
             }
             if (ev.status === 'needs_review') photoCell.review = true;
-            if (flags.length)                 photoCell.fraud  = true;
+            if (flags.some(f => !INFORMATIONAL_FLAGS.has(f))) photoCell.fraud = true;
           }
 
           // Часы атрибутируем только к дню arrival; buffer-arrivals (ownDk вне периода) пропускаем
