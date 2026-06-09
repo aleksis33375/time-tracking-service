@@ -947,17 +947,18 @@ def main() -> None:
         finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
         print(f"     → {'needs_review' if go_review else 'done'}", flush=True)
 
-        # Парный arrival: done для нормальной пары, needs_review для двойной смены
+        # Парный arrival: часы записываем ВСЕГДА — departure может быть на проверке, но часы корректны
         if paired_arrival_id:
             if is_double_shift:
                 sb_patch(
                     f"/rest/v1/events?id=eq.{paired_arrival_id}",
                     {"status": "needs_review", "fraud_flags": ["double_shift"], "hours": hours},
                 )
-            elif not go_review:
+            else:
+                arrival_status = "needs_review" if go_review else "done"
                 sb_patch(
                     f"/rest/v1/events?id=eq.{paired_arrival_id}",
-                    {"status": "done", "hours": hours},
+                    {"status": arrival_status, "hours": hours},
                 )
 
         # п.14 Уведомление руководителю если needs_review
