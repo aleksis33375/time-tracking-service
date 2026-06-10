@@ -22,7 +22,7 @@ const SUPABASE_HEADERS = {
   'Content-Type': 'application/json',
 };
 
-const MAX_PHOTO_BYTES = 150 * 1024; // 150 КБ
+const MAX_PHOTO_BYTES = 500 * 1024; // 500 КБ — увеличено для сохранения читаемости OCR-водяного знака
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -180,8 +180,8 @@ async function handlePhoto(msg) {
     photo_time:  stampTimestamp,
   });
 
-  // Запускаем AI-worker немедленно — не ждём ненадёжного cron
-  await triggerAiWorker();
+  // AI-worker запускается по cron каждые 5 мин — дополнительный trigger убран
+  // (массовые dispatch в 06:00 при одновременном входе рабочих вызывали сбои GitHub Actions)
 }
 
 // ── Caption parser ────────────────────────────────────────────────────────────

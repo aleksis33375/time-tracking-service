@@ -27,34 +27,52 @@ const EN_MONTHS_BF = {
 
 function prepareText(raw) {
   return raw
+    // OCR шум: ведущая "1" перед временем (" 123:55:30" → " 23:55:30")
+    .replace(/\s1(\d{2}:\d{2}:\d{2})/g, ' $1')
     .replace(/(\d{2})1(\d{2}):(\d{2})/g, '$1:$2:$3')
+    // Латинские OCR-замены для названий месяцев
     .replace(/(\d{1,2})\s*mas\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*mai\s*(\d{4})/gi, '$1 мая $2')
     .replace(/(\d{1,2})\s*map\s*(\d{4})/gi, '$1 мар $2')
+    .replace(/(\d{1,2})\s*waa\s*(\d{4})/gi, '$1 мая $2')   // "Waa" → "мая"
+    .replace(/(\d{1,2})\s*was\s*(\d{4})/gi, '$1 мая $2')   // "Was" → "мая"
     .replace(/г[;,]/g, 'г.')
     .replace(/([а-яё]{3,4})\.\s*/gi, '$1 ')   // "июн. " → "июн "
-    .replace(/(\d{4})\s*г\.\s*/g, '$1 ');      // "2026 г. " → "2026 "
+    .replace(/(\d{4})\s*г\.\s*/g, '$1 ')       // "2026 г. " → "2026 "
+    // Мусорная цифра/символ сразу после 4-значного года ("20261 "→"2026 ", "20260."→"2026.")
+    .replace(/(\d{4})[01]([.\s,;])/g, '$1$2')
+    // Точка сразу после года ("2026." → "2026 ")
+    .replace(/(\d{4})\./g, '$1 ')
+    // Изолированный "1" или "l" между годом и временем ("2026 1," → "2026 ")
+    .replace(/(\d{4})\s+[1l][,\s]/gi, '$1 ');
 }
 
 function tryExtract(text) {
   const t = prepareText(text);
 
-  const full = t.match(/(\d{1,2})\s*([а-яёa-z]{3,})\s*(\d{4})[^0-9]+(\d{1,2}):(\d{2}):(\d{2})/i);
+  // Формат: DD месяц YYYY HH:MM[:SS]
+  const full = t.match(/(\d{1,2})\s*([а-яёa-z]{3,})\s*(\d{4})[^0-9]+(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
   if (full) {
     const key  = full[2].toLowerCase().slice(0, 3);
     const mNum = RU_MONTHS_BF[key] || EN_MONTHS_BF[key];
-    if (mNum) return { found: true, day: full[1], month: mNum, year: full[3], h: full[4], m: full[5], s: full[6] };
+    if (mNum) return { found: true, day: full[1], month: mNum, year: full[3], h: full[4], m: full[5], s: full[6] || '0' };
   }
 
-  const time = t.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-  const dmy  = t.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
-  const ymd  = t.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
-  if (time && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: dmy[3], h: time[1], m: time[2], s: time[3] };
+  const time   = t.match(/(\d{1,2}):(\d{2}):(\d{2})/);   // HH:MM:SS
+  const timeHM = t.match(/\b(\d{1,2}):(\d{2})\b/);        // HH:MM без секунд
+  const dmy    = t.match(/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
+  const ymd    = t.match(/(\d{4})[-./](\d{2})[-./](\d{2})/);
+
+  function normalizeYear(y) { return y.length === 2 ? String(2000 + parseInt(y)) : y; }
+
+  if (time && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: normalizeYear(dmy[3]), h: time[1], m: time[2], s: time[3] };
   if (time && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: time[1], m: time[2], s: time[3] };
+  if (timeHM && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: normalizeYear(dmy[3]), h: timeHM[1], m: timeHM[2], s: '0' };
+  if (timeHM && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: timeHM[1], m: timeHM[2], s: '0' };
   return { found: false };
 }
 
-function toIso({ day, month, year, h, m, s }) {
+function toIso({ day, month, year, h, m, s = '0' }) {
   const moscowMs = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day),
                              parseInt(h), parseInt(m), parseInt(s));
   return new Date(moscowMs - 3 * 3600 * 1000).toISOString();
