@@ -110,6 +110,47 @@ async function extractOcrTimestamp(buffer, worker) {
     const resBot = tryExtract(await ocrBuffer(await makeCornerBuf(meta.height - cornH), worker));
     if (resBot.found) return toIso(resBot);
 
+    // Pass C: нижняя полоса полной ширины — водяной знак в любом горизонтальном положении
+    const stripTop = Math.floor(meta.height * 0.75);
+    const stripH   = meta.height - stripTop;
+    const resStrip = tryExtract(await ocrBuffer(
+      await sharp(buffer)
+        .extract({ left: 0, top: stripTop, width: meta.width, height: stripH })
+        .greyscale().normalise()
+        .resize({ width: 1200, kernel: 'lanczos3' })
+        .sharpen({ sigma: 2 })
+        .toBuffer(),
+      worker
+    ));
+    if (resStrip.found) return toIso(resStrip);
+
+    // Pass D: левый нижний угол, PSM 7 — Android-водяной знак слева
+    await worker.setParameters({ tessedit_pageseg_mode: '7' }).catch(() => {});
+    const resLeftBot = tryExtract(await ocrBuffer(
+      await sharp(buffer)
+        .extract({ left: 0, top: Math.floor(meta.height * 0.70),
+                   width: Math.floor(meta.width * 0.60), height: Math.floor(meta.height * 0.30) })
+        .greyscale().normalise()
+        .resize({ width: 900, kernel: 'lanczos3' })
+        .sharpen({ sigma: 2 })
+        .toBuffer(),
+      worker
+    ));
+    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
+    if (resLeftBot.found) return toIso(resLeftBot);
+
+    // Pass E: нижняя полоса с инверсией — тёмный текст на светлом фоне
+    const resInv = tryExtract(await ocrBuffer(
+      await sharp(buffer)
+        .extract({ left: 0, top: stripTop, width: meta.width, height: stripH })
+        .greyscale().normalise().negate()
+        .resize({ width: 1200, kernel: 'lanczos3' })
+        .sharpen({ sigma: 2 })
+        .toBuffer(),
+      worker
+    ));
+    if (resInv.found) return toIso(resInv);
+
     return null;
   } catch {
     return null;
