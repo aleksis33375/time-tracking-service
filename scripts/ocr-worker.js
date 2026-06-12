@@ -212,9 +212,11 @@ async function main() {
   try {
     worker = await Tesseract.createWorker('rus+eng');
 
-    const since = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    // Обрабатываем только свежие события (4 часа) и не более 50 за раз.
+    // Исторические события обрабатывает backfill-ocr-timestamps.js отдельно.
+    const since = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags,status,event_type&limit=200`,
+      `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.${since}&select=id,photo_url,fraud_flags,status,event_type&limit=50&order=created_at.desc`,
       { headers: HEADERS }
     );
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);

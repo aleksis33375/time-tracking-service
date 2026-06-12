@@ -12,7 +12,7 @@ concurrency:
 jobs:
   process:
     runs-on: ubuntu-latest
-    timeout-minutes: 12       # увеличен из-за добавленного Node.js OCR-шага
+    timeout-minutes: 22       # OCR шаг занимает ~10 мин + Python ~1 мин
 
     steps:
       - name: Checkout
