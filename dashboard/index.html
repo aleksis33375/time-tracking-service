@@ -3304,13 +3304,13 @@
           '&deleted_at=is.null&order=team.asc,display_name.asc'
         ),
         guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,hours,status,fraud_flags,photo_url,event_type` +
-          `&photo_timestamp=gte.${bufStartISO}&photo_timestamp=lt.${bufEndISO}` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,hours,status,fraud_flags,photo_url,event_type` +
+          `&created_at=gte.${bufStartISO}&created_at=lt.${bufEndISO}` +
           `&status=in.(done,needs_review)&limit=5000`
         ),
         prevStartISO ? guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours` +
-          `&photo_timestamp=gte.${prevStartISO}&photo_timestamp=lt.${prevEndISO}` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,event_type,hours` +
+          `&created_at=gte.${prevStartISO}&created_at=lt.${prevEndISO}` +
           `&status=eq.done&hours=not.is.null&limit=5000`
         ) : Promise.resolve([])
       ]);
@@ -3336,11 +3336,11 @@
       // Часы атрибутируем к дню ARRIVAL. Если arrival.hours == null (needs_review), берём из парного departure.
       const byEmp = {};
       for (const ev of events || []) {
-        if (!ev.employee_id || !ev.photo_timestamp) continue;
+        if (!ev.employee_id) continue;
         (byEmp[ev.employee_id] = byEmp[ev.employee_id] || []).push(ev);
       }
       for (const empId in byEmp) {
-        byEmp[empId].sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
+        byEmp[empId].sort((a, b) => new Date(a.photo_timestamp ?? a.created_at) - new Date(b.photo_timestamp ?? b.created_at));
       }
 
       const eMap = {};
@@ -3353,7 +3353,7 @@
         const depTargetDk = {};
         for (let pi = 0; pi < evs.length; pi++) {
           if (evs[pi].event_type !== 'arrival') continue;
-          const arrDk = toMskDate(evs[pi].photo_timestamp);
+          const arrDk = toMskDate(evs[pi].photo_timestamp ?? evs[pi].created_at);
           for (let pj = pi + 1; pj < evs.length; pj++) {
             if (evs[pj].event_type === 'departure') { depTargetDk[pj] = arrDk; break; }
             if (evs[pj].event_type === 'arrival')   break;
@@ -3362,7 +3362,8 @@
 
         for (let i = 0; i < evs.length; i++) {
           const ev    = evs[i];
-          const ownDk = toMskDate(ev.photo_timestamp);
+          const evTs  = ev.photo_timestamp ?? ev.created_at;
+          const ownDk = toMskDate(evTs);
           const flags = parseFraudFlags(ev.fraud_flags);
 
           // Фото departure → к дню его paired arrival (может быть в другом периоде через границу)
@@ -3374,7 +3375,7 @@
                                       double_shift: false, shift_hours: [], events: [] };
             const photoCell = eMap[empId][photoDk];
             if (ev.photo_url) {
-              photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: ev.photo_timestamp });
+              photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: evTs });
             }
             if (ev.status === 'needs_review') photoCell.review = true;
             if (flags.some(f => !INFORMATIONAL_FLAGS.has(f))) photoCell.fraud = true;
@@ -3399,8 +3400,8 @@
           }
           let effHours = null;
           if (pairedDep) {
-            const t1 = Math.floor(new Date(ev.photo_timestamp).getTime() / 60000) * 60000;
-            const t2 = Math.floor(new Date(pairedDep.photo_timestamp).getTime() / 60000) * 60000;
+            const t1 = Math.floor(new Date(evTs).getTime() / 60000) * 60000;
+            const t2 = Math.floor(new Date(pairedDep.photo_timestamp ?? pairedDep.created_at).getTime() / 60000) * 60000;
             const diffH = (t2 - t1) / 3600000;
             if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
             // Fallback: timestamps дали невалидный диапазон — берём hours из БД
@@ -3423,11 +3424,11 @@
       // Переход часов: часы за каждый день предыдущего периода — по парам arrival→departure
       const prevByEmp = {};
       for (const ev of prevEvents || []) {
-        if (!ev.employee_id || !ev.photo_timestamp) continue;
+        if (!ev.employee_id) continue;
         (prevByEmp[ev.employee_id] = prevByEmp[ev.employee_id] || []).push(ev);
       }
       for (const empId in prevByEmp) {
-        prevByEmp[empId].sort((a, b) => new Date(a.photo_timestamp) - new Date(b.photo_timestamp));
+        prevByEmp[empId].sort((a, b) => new Date(a.photo_timestamp ?? a.created_at) - new Date(b.photo_timestamp ?? b.created_at));
       }
 
       const prevDayMax = {};   // `${empId}|${date}` → maxHours
@@ -3436,6 +3437,7 @@
         for (let i = 0; i < evs.length; i++) {
           const ev = evs[i];
           if (ev.event_type !== 'arrival') continue;
+          const evTs = ev.photo_timestamp ?? ev.created_at;
           let pairedDep = null;
           for (let j = i + 1; j < evs.length; j++) {
             if (evs[j].event_type === 'departure') { pairedDep = evs[j]; break; }
@@ -3443,14 +3445,14 @@
           }
           let effHours = null;
           if (pairedDep) {
-            const t1 = Math.floor(new Date(ev.photo_timestamp).getTime() / 60000) * 60000;
-            const t2 = Math.floor(new Date(pairedDep.photo_timestamp).getTime() / 60000) * 60000;
+            const t1 = Math.floor(new Date(evTs).getTime() / 60000) * 60000;
+            const t2 = Math.floor(new Date(pairedDep.photo_timestamp ?? pairedDep.created_at).getTime() / 60000) * 60000;
             const diffH = (t2 - t1) / 3600000;
             if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
           }
           if (effHours == null) effHours = ev.hours;
           if (effHours == null) continue;
-          const key = `${empId}|${toMskDate(ev.photo_timestamp)}`;
+          const key = `${empId}|${toMskDate(evTs)}`;
           prevDayMax[key] = (prevDayMax[key] || 0) + effHours;
         }
       }

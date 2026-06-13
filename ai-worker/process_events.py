@@ -160,7 +160,7 @@ def claim_pending_events() -> list[dict]:
     # Берём IDs ожидающих записей
     rows = sb_get(
         "/rest/v1/events",
-        f"?status=eq.pending&select=id&limit={BATCH_SIZE}&order=created_at.desc",
+        f"?status=eq.pending&select=id&limit={BATCH_SIZE}&order=created_at.asc",
     )
     if not rows or isinstance(rows, dict):
         return []
