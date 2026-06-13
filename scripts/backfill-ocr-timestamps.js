@@ -37,8 +37,8 @@ function prepareText(raw) {
     .replace(/(\d{1,2})\s*waa\s*(\d{4})/gi, '$1 мая $2')   // "Waa" → "мая"
     .replace(/(\d{1,2})\s*was\s*(\d{4})/gi, '$1 мая $2')   // "Was" → "мая"
     .replace(/г[;,]/g, 'г.')
-    .replace(/([а-яё]{3,4})\.\s*/gi, '$1 ')   // "июн. " → "июн "
-    .replace(/(\d{4})\s*г\.\s*/g, '$1 ')       // "2026 г. " → "2026 "
+    .replace(/([а-яёa-z]{3,4})[!.]\s*/gi, '$1 ')      // "июн!" → "июн", "июн." → "июн"
+    .replace(/(\d{4})\s*[гпrР][.!,]\s*/g, '$1 ')       // "2026 г." → "2026", "2026 п." → "2026"
     // Мусорная цифра/символ сразу после 4-значного года ("20261 "→"2026 ", "20260."→"2026.")
     .replace(/(\d{4})[01]([.\s,;])/g, '$1$2')
     // Точка сразу после года ("2026." → "2026 ")
@@ -47,7 +47,7 @@ function prepareText(raw) {
     .replace(/(\d{4})\s+[1l][,\s]/gi, '$1 ');
 }
 
-function tryExtract(text) {
+function tryExtract(text, createdDate = null) {
   const t = prepareText(text);
 
   // Формат: DD месяц YYYY HH:MM[:SS]
@@ -69,6 +69,15 @@ function tryExtract(text) {
   if (time && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: time[1], m: time[2], s: time[3] };
   if (timeHM && dmy) return { found: true, day: dmy[1], month: parseInt(dmy[2]), year: normalizeYear(dmy[3]), h: timeHM[1], m: timeHM[2], s: '0' };
   if (timeHM && ymd) return { found: true, day: ymd[3], month: parseInt(ymd[2]), year: ymd[1], h: timeHM[1], m: timeHM[2], s: '0' };
+  if (createdDate) {
+    const yearTime = t.match(/\b(\d{4})\b[^0-9]*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (yearTime) {
+      const [, year, h, m, s] = yearTime;
+      const [y, mo, d] = createdDate.split('-');
+      if (year === y)
+        return { found: true, day: d, month: parseInt(mo), year, h, m, s: s || '0' };
+    }
+  }
   return { found: false };
 }
 
@@ -86,7 +95,7 @@ async function ocrBuffer(buf, worker) {
   return r?.data?.text || '';
 }
 
-async function extractOcrTimestamp(buffer, worker) {
+async function extractOcrTimestamp(buffer, worker, createdDate = null) {
   try {
     // Pass A: full image
     const fullBuf = await sharp(buffer)
@@ -97,7 +106,7 @@ async function extractOcrTimestamp(buffer, worker) {
       .toBuffer();
 
     await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
-    const resA = tryExtract(await ocrBuffer(fullBuf, worker));
+    const resA = tryExtract(await ocrBuffer(fullBuf, worker), createdDate);
     if (resA.found) return toIso(resA);
 
     // Pass B: corner crops (right 60% × top/bottom 30%)
@@ -115,10 +124,10 @@ async function extractOcrTimestamp(buffer, worker) {
         .sharpen({ sigma: 1.5 })
         .toBuffer();
 
-    const resTop = tryExtract(await ocrBuffer(await makeCornerBuf(0), worker));
+    const resTop = tryExtract(await ocrBuffer(await makeCornerBuf(0), worker), createdDate);
     if (resTop.found) return toIso(resTop);
 
-    const resBot = tryExtract(await ocrBuffer(await makeCornerBuf(meta.height - cornH), worker));
+    const resBot = tryExtract(await ocrBuffer(await makeCornerBuf(meta.height - cornH), worker), createdDate);
     if (resBot.found) return toIso(resBot);
 
     // Pass C: нижняя полоса полной ширины — водяной знак в любом горизонтальном положении
@@ -132,7 +141,7 @@ async function extractOcrTimestamp(buffer, worker) {
         .sharpen({ sigma: 2 })
         .toBuffer(),
       worker
-    ));
+    ), createdDate);
     if (resStrip.found) return toIso(resStrip);
 
     // Pass D: левый нижний угол, PSM 7 — Android-водяной знак слева
@@ -146,7 +155,7 @@ async function extractOcrTimestamp(buffer, worker) {
         .sharpen({ sigma: 2 })
         .toBuffer(),
       worker
-    ));
+    ), createdDate);
     await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
     if (resLeftBot.found) return toIso(resLeftBot);
 
@@ -159,8 +168,19 @@ async function extractOcrTimestamp(buffer, worker) {
         .sharpen({ sigma: 2 })
         .toBuffer(),
       worker
-    ));
+    ), createdDate);
     if (resInv.found) return toIso(resInv);
+
+    // Pass F: бинарный порог + PSM 11 sparse text — для фото с плохим контрастом
+    await worker.setParameters({ tessedit_pageseg_mode: '11' }).catch(() => {});
+    const binBuf = await sharp(buffer)
+      .extract({ left: 0, top: stripTop, width: meta.width, height: stripH })
+      .greyscale().normalise().threshold(128)
+      .resize({ width: 1200, kernel: 'lanczos3' })
+      .toBuffer();
+    const resF = tryExtract(await ocrBuffer(binBuf, worker), createdDate);
+    await worker.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
+    if (resF.found) return toIso(resF);
 
     return null;
   } catch {
@@ -249,7 +269,8 @@ async function main() {
 
       try {
         const photo = await downloadPhoto(ev.photo_url);
-        const ocrTime = await extractOcrTimestamp(photo, worker);
+        const createdDate = new Date(new Date(ev.created_at).getTime() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+        const ocrTime = await extractOcrTimestamp(photo, worker, createdDate);
 
         if (!ocrTime) continue;
 
