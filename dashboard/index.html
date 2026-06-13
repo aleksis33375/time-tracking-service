@@ -3403,6 +3403,8 @@
             const t2 = Math.floor(new Date(pairedDep.photo_timestamp).getTime() / 60000) * 60000;
             const diffH = (t2 - t1) / 3600000;
             if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
+            // Fallback: timestamps дали невалидный диапазон — берём hours из БД
+            if (effHours == null && pairedDep.hours != null) effHours = pairedDep.hours;
           }
           // Fallback: одиночный arrival без paired departure — доверяем worker.hours
           if (effHours == null) effHours = ev.hours;

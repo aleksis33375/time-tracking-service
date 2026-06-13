@@ -744,9 +744,11 @@ def finalize_event(
             "status":      "done",
             "employee_id": employee["id"],
             "event_type":  event_type,
-            "hours":       hours,
             "fraud_flags": fraud_flags,
         }
+        if hours is not None:
+            body["hours"] = hours
+        # hours=None (arrival) — не трогаем существующее значение в БД
 
     result = sb_patch(f"/rest/v1/events?id=eq.{event_id}", body, prefer="return=representation")
     expected_status = "needs_review" if go_review else "done"
