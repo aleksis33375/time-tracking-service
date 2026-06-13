@@ -229,7 +229,7 @@ async function main() {
     let events = [];
     while (true) {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at,fraud_flags&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+        `${SUPABASE_URL}/rest/v1/events?photo_url=not.is.null&photo_timestamp=is.null&created_at=gte.2026-05-01T00:00:00Z&select=id,photo_url,photo_timestamp,status,created_at,fraud_flags&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`,
         { headers: HEADERS }
       );
       if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -253,8 +253,8 @@ async function main() {
 
         if (!ocrTime) continue;
 
-        // Отклоняем даты в будущем — явная ошибка OCR
-        if (new Date(ocrTime) > new Date()) {
+        // Отклоняем даты явно в будущем (+6ч grace — OCR на недавних фото не ошибается)
+        if (new Date(ocrTime) > new Date(Date.now() + 6 * 3600 * 1000)) {
           console.warn(`  ⚠️  Event ${ev.id}: future date rejected (${ocrTime})`);
           continue;
         }

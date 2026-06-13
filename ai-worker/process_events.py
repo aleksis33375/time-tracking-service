@@ -160,7 +160,7 @@ def claim_pending_events() -> list[dict]:
     # Берём IDs ожидающих записей
     rows = sb_get(
         "/rest/v1/events",
-        f"?status=eq.pending&select=id&limit={BATCH_SIZE}&order=created_at.asc",
+        f"?status=eq.pending&select=id&limit={BATCH_SIZE}&order=created_at.desc",
     )
     if not rows or isinstance(rows, dict):
         return []
@@ -563,26 +563,49 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
     def parse_ts(s: str) -> datetime:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
-    dep_ts = parse_ts(ts_str)
-    window_start = dep_ts - timedelta(hours=24)
+    dep_ts      = parse_ts(ts_str)
+    dep_created = parse_ts(current_event.get("created_at") or ts_str)
+    window_start         = dep_ts      - timedelta(hours=24)
+    window_start_created = dep_created - timedelta(hours=24)
 
+    # Основной запрос: события с photo_timestamp в окне
     rows = sb_get(
         "/rest/v1/events",
         f"?employee_id=eq.{employee_id}"
         f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
         f"&photo_timestamp=lt.{_ts_for_url(dep_ts)}"
         f"&status=in.(done,processing,needs_review)"
-        f"&select=id,event_type,photo_timestamp"
+        f"&select=id,event_type,photo_timestamp,created_at"
         f"&order=photo_timestamp.asc",
     )
-
     if not isinstance(rows, list):
         rows = []
+
+    # Дополнительный запрос: arrivals без photo_timestamp — ищем по created_at.
+    # Fallback когда OCR не смог прочитать водяной знак, но arrival реально был.
+    null_ts_rows = sb_get(
+        "/rest/v1/events",
+        f"?employee_id=eq.{employee_id}"
+        f"&event_type=eq.arrival"
+        f"&photo_timestamp=is.null"
+        f"&created_at=gte.{_ts_for_url(window_start_created)}"
+        f"&created_at=lt.{_ts_for_url(dep_created)}"
+        f"&status=in.(done,processing,needs_review)"
+        f"&select=id,event_type,photo_timestamp,created_at",
+    )
+    if not isinstance(null_ts_rows, list):
+        null_ts_rows = []
+
+    def effective_ts(ev: dict) -> datetime:
+        ts = ev.get("photo_timestamp") or ev.get("created_at")
+        return parse_ts(ts) if ts else datetime.min.replace(tzinfo=timezone.utc)
+
+    all_rows = sorted(rows + null_ts_rows, key=effective_ts)
 
     open_arrival_id = None
     closed_pairs    = 0
 
-    for ev in rows:
+    for ev in all_rows:
         ev_type = ev.get("event_type")
         if ev_type == "arrival":
             open_arrival_id = ev["id"]        # последний необработанный arrival
@@ -594,11 +617,15 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
     if open_arrival_id is None:
         return (None, None, False, True)      # нет открытого arrival → дубль
 
-    arr_row = next((r for r in rows if r["id"] == open_arrival_id), None)
+    arr_row = next((r for r in all_rows if r["id"] == open_arrival_id), None)
     if arr_row is None:
         return (None, None, False, False)
 
-    arr_ts = parse_ts(arr_row["photo_timestamp"])
+    # Для arrival без photo_timestamp используем created_at как приблизительное время
+    arr_ts_str = arr_row.get("photo_timestamp") or arr_row.get("created_at")
+    if not arr_ts_str:
+        return (None, None, False, False)
+    arr_ts = parse_ts(arr_ts_str)
     hours  = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
     return (hours, open_arrival_id, closed_pairs >= 1, False)
 

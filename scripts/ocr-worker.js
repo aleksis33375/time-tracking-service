@@ -82,8 +82,8 @@ function toIso({ day, month, year, h, m, s = '0' }) {
 function isValidDate(isoStr) {
   const d = new Date(isoStr);
   if (isNaN(d.getTime())) return false;
-  if (d > new Date()) return false;                    // будущее → ошибка OCR
-  if (d < new Date('2026-01-01T00:00:00Z')) return false; // слишком старое → ошибка OCR
+  if (d > new Date(Date.now() + 6 * 3600 * 1000)) return false; // +6ч grace period — исключает только явные OCR-ошибки
+  if (d < new Date('2026-01-01T00:00:00Z')) return false;        // слишком старое → ошибка OCR
   return true;
 }
 
