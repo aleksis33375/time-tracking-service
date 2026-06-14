@@ -350,6 +350,10 @@ def auto_create_employee(name: str) -> dict | None:
     # Имя должно содержать хотя бы одну букву (не просто цифры/символы)
     if not re.search(r'[а-яА-ЯёЁa-zA-Z]', clean):
         return None
+    # Имя не должно быть предложением: реальные имена ≤ 4 слов (Фамилия Имя Отчество + запас)
+    if len(clean.split()) > 4:
+        log("info", f"auto_create skipped: name too long ({len(clean.split())} words): {clean!r}")
+        return None
     # Нормальный регистр: "киселёв леонид" → "Киселёв Леонид"
     display_name = " ".join(w.capitalize() for w in clean.split())
     result = sb_post(
