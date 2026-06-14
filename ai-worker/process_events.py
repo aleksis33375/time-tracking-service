@@ -631,6 +631,8 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
         return (None, None, False, False)
     arr_ts = parse_ts(arr_ts_str)
     hours  = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
+    if hours < 0:
+        return (None, None, False, False)
     return (hours, open_arrival_id, closed_pairs >= 1, False)
 
 
