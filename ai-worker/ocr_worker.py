@@ -50,15 +50,24 @@ def prepare_text(raw: str) -> str:
     t = re.sub(r'(\d{1,2})\s*map\s*(\d{4})',  r'\1 мар \2', t, flags=re.IGNORECASE)
     t = re.sub(r'(\d{1,2})\s*waa\s*(\d{4})',  r'\1 мая \2', t, flags=re.IGNORECASE)
     t = re.sub(r'(\d{1,2})\s*was\s*(\d{4})',  r'\1 мая \2', t, flags=re.IGNORECASE)
-    t = re.sub(r'г[;,]', 'г.', t)
-    t = re.sub(r'([а-яёa-z]{3,4})[!.]\s*', r'\1 ', t, flags=re.IGNORECASE)
-    t = re.sub(r'(\d{4})\s*[гпrР][.!,]\s*', r'\1 ', t)
+    # Пунктуация после названий месяцев: "июн." "июн," "июн:" "июн;" → "июн "
+    t = re.sub(r'([а-яёa-z]{3,4})[!.:;,]\s*', r'\1 ', t, flags=re.IGNORECASE)
+    # Убираем "г." "г," "г:" "г;" "г!" после года: "2026 г:" → "2026 "
+    t = re.sub(r'(\d{4})\s*[гпrР][.!,:;]\s*', r'\1 ', t)
     # Мусорная цифра/символ сразу после 4-значного года ("20261 " → "2026 ")
     t = re.sub(r'(\d{4})[01]([.\s,;])', r'\1\2', t)
     # Точка сразу после года ("2026." → "2026 ")
     t = re.sub(r'(\d{4})\.', r'\1 ', t)
     # Изолированный "1" или "l" между годом и временем ("2026 1," → "2026 ")
     t = re.sub(r'(\d{4})\s+[1l][,\s]', r'\1 ', t, flags=re.IGNORECASE)
+    # Время с точками/запятыми вместо двоеточий: "18.04.11" → "18:04:11"
+    # Negative lookahead (?!\d) защищает даты "13.06.2026" от замены
+    def _dot_to_colon(m):
+        h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if h <= 23 and mi <= 59 and s <= 59:
+            return f'{m.group(1)}:{m.group(2)}:{m.group(3)}'
+        return m.group(0)
+    t = re.sub(r'\b(\d{1,2})[.,](\d{2})[.,](\d{2})(?!\d)', _dot_to_colon, t)
     return t
 
 
