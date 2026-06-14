@@ -134,7 +134,7 @@ def is_valid_date(iso_str: str) -> bool:
     return True
 
 
-def extract_ocr_timestamp(image_bytes: bytes, reader: easyocr.Reader, created_date: str = None):
+def extract_ocr_timestamp(image_bytes: bytes, reader: easyocr.Reader, created_date: str = None, debug: bool = False):
     try:
         img     = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         img_arr = np.array(img)
@@ -142,6 +142,9 @@ def extract_ocr_timestamp(image_bytes: bytes, reader: easyocr.Reader, created_da
         # Pass A: EasyOCR на полном изображении (RGB)
         results = reader.readtext(img_arr)
         text_a  = ' '.join(t for _, t, _ in results)
+        if debug:
+            print(f'    [DEBUG] Pass A raw: {repr(text_a[:300])}')
+            print(f'    [DEBUG] Pass A prepared: {repr(prepare_text(text_a)[:300])}')
         res_a   = try_extract(text_a, created_date)
         if res_a['found']:
             return to_iso(res_a)
@@ -150,6 +153,8 @@ def extract_ocr_timestamp(image_bytes: bytes, reader: easyocr.Reader, created_da
         gray     = np.array(img.convert('L'))
         results2 = reader.readtext(gray)
         text_b   = ' '.join(t for _, t, _ in results2)
+        if debug:
+            print(f'    [DEBUG] Pass B raw: {repr(text_b[:300])}')
         res_b    = try_extract(text_b, created_date)
         if res_b['found']:
             return to_iso(res_b)
@@ -181,7 +186,7 @@ def update_event(event_id: int, photo_timestamp: str, current_flags, event_statu
         raise RuntimeError(f"Update failed: {r.status_code}")
 
 
-def _process_events(events: list, reader: easyocr.Reader) -> int:
+def _process_events(events: list, reader: easyocr.Reader, debug: bool = False) -> int:
     updated = 0
     for ev in events:
         try:
@@ -191,7 +196,7 @@ def _process_events(events: list, reader: easyocr.Reader) -> int:
                 + timedelta(hours=3)
             ).strftime('%Y-%m-%d')
 
-            ocr_time = extract_ocr_timestamp(photo, reader, moscow_date)
+            ocr_time = extract_ocr_timestamp(photo, reader, moscow_date, debug=debug)
 
             if not ocr_time:
                 print(f"  — Event {ev['id']}: no timestamp found")
@@ -212,7 +217,7 @@ def _process_events(events: list, reader: easyocr.Reader) -> int:
     return updated
 
 
-def run_regular(reader: easyocr.Reader):
+def run_regular(reader: easyocr.Reader, debug: bool = False):
     since = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
     url   = (
         f"{SUPABASE_URL}/rest/v1/events"
@@ -226,7 +231,23 @@ def run_regular(reader: easyocr.Reader):
         raise RuntimeError(f"Fetch failed: {r.status_code}")
     events = r.json()
     print(f"📦 Found {len(events)} events without timestamp")
-    _process_events(events, reader)
+    _process_events(events, reader, debug=debug)
+
+
+def run_debug(reader: easyocr.Reader):
+    """Берёт 5 случайных фото без timestamp и печатает что EasyOCR реально видит."""
+    url = (
+        f"{SUPABASE_URL}/rest/v1/events"
+        f"?photo_url=not.is.null&photo_timestamp=is.null"
+        f"&select=id,photo_url,fraud_flags,status,event_type,created_at"
+        f"&limit=5&order=created_at.desc"
+    )
+    r = requests.get(url, headers=HEADERS, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Fetch failed: {r.status_code}")
+    events = r.json()
+    print(f"🔍 DEBUG: проверяю {len(events)} фото")
+    _process_events(events, reader, debug=True)
 
 
 def run_backfill(reader: easyocr.Reader):
@@ -269,6 +290,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--backfill', action='store_true',
                         help='Process all events since 2026-05-01')
+    parser.add_argument('--debug', action='store_true',
+                        help='Show raw EasyOCR output for 5 recent photos (no DB writes)')
     args = parser.parse_args()
 
     print("🔄 OCR Worker (EasyOCR) started")
@@ -277,7 +300,9 @@ def main():
     print("  Models loaded ✓")
 
     try:
-        if args.backfill:
+        if args.debug:
+            run_debug(reader)
+        elif args.backfill:
             run_backfill(reader)
         else:
             run_regular(reader)

@@ -31,6 +31,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r ai-worker/requirements-ocr.txt
 
+      - name: Debug — what does EasyOCR see on 5 photos
+        continue-on-error: true
+        run: python ai-worker/ocr_worker.py --debug
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
       - name: Run backfill
         run: python ai-worker/ocr_worker.py --backfill
         env:
