@@ -215,8 +215,8 @@ def _clean_name(raw: str) -> str:
 
 
 def _norm_cyr(s: str) -> str:
-    """Нормализует часто путаемые кириллические символы (ь/ъ, ё/е)."""
-    return s.replace("ь", "ъ").replace("ё", "е")
+    """Нормализует часто путаемые кириллические символы (ь/ъ, ё/е, я/е)."""
+    return s.replace("ь", "ъ").replace("ё", "е").replace("я", "е")
 
 
 def _prefix_sim(a: str, b: str, min_prefix: int = 3) -> float:
