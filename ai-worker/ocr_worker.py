@@ -227,7 +227,7 @@ def _process_events(events: list, reader: easyocr.Reader, debug: bool = False) -
 
 
 def run_regular(reader: easyocr.Reader, debug: bool = False):
-    since = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+    since = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat().replace('+00:00', 'Z')
     url   = (
         f"{SUPABASE_URL}/rest/v1/events"
         f"?photo_url=not.is.null&photo_timestamp=is.null"
