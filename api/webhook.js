@@ -144,13 +144,15 @@ async function handlePhoto(msg) {
 
   // Всегда status:'pending' — даже если штамп не прочитался
   const insertResult = await insertEvent({
-    photo_url:       photoUrl,
-    photo_timestamp: stampTimestamp,
-    status:          'pending',
-    name_from_photo: caption.nameFromPhoto,
-    event_type:      caption.eventType,
-    event_type_raw:  caption.eventTypeRaw,
-    fraud_flags:     [
+    photo_url:          photoUrl,
+    photo_timestamp:    stampTimestamp,
+    status:             'pending',
+    name_from_photo:    caption.nameFromPhoto,
+    event_type:         caption.eventType,
+    event_type_raw:     caption.eventTypeRaw,
+    telegram_file_id:   largest.file_id,   // BUG-076: сохраняем для восстановления при сбое загрузки
+    telegram_message_id: String(messageId),
+    fraud_flags:        [
       ...(!photoUrl    ? ['no_photo']      : []),
       ...(!stampTimestamp ? ['no_photo_time'] : []),
     ],
