@@ -497,7 +497,7 @@ def build_fraud_flags(event: dict, face_match: bool | None) -> list[str]:
 
 # Флаги реального мошенничества → needs_review.
 # no_photo_time и incomplete_day — технические ограничения, не мошенничество → done.
-_FRAUD_REVIEW_FLAGS = {"face_mismatch", "double_shift", "no_photo", "face_timeout", "unknown_event_type"}
+_FRAUD_REVIEW_FLAGS = {"face_mismatch", "no_photo", "face_timeout", "unknown_event_type"}
 
 def needs_review(employee: dict | None, face_match: bool | None, fraud_flags: list[str]) -> bool:
     """Запись идёт на ручную проверку ТОЛЬКО при реальных аномалиях:
@@ -659,7 +659,7 @@ def _flag_previous_pair_as_double(employee_id: str, dep_ts: datetime) -> None:
             flags.append("double_shift")
         sb_patch(
             f"/rest/v1/events?id=eq.{ev['id']}",
-            {"status": "needs_review", "fraud_flags": flags},
+            {"fraud_flags": flags},
         )
 
 
@@ -962,7 +962,7 @@ def main() -> None:
                 review_count += 1
                 continue
 
-        # Двойная смена → флагуем предыдущую пару + текущее departure идёт на проверку
+        # Двойная смена → флагуем предыдущую пару (информационно), авто-одобряем
         if is_double_shift:
             dep_ts_dt = datetime.fromisoformat(
                 (event.get("photo_timestamp") or event.get("created_at") or "").replace("Z", "+00:00")
@@ -970,8 +970,7 @@ def main() -> None:
             _flag_previous_pair_as_double(employee["id"], dep_ts_dt)
             if "double_shift" not in fraud_flags:
                 fraud_flags.append("double_shift")
-            go_review = True
-            print(f"     double shift detected → needs_review", flush=True)
+            print(f"     double shift detected → auto-approved", flush=True)
 
         # п.10 Неполный день — информационный флаг, НЕ блокирует автоматику
         if is_incomplete_day(employee, event_type, hours):
@@ -983,12 +982,12 @@ def main() -> None:
         finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
         print(f"     → {'needs_review' if go_review else 'done'}", flush=True)
 
-        # Парный arrival: часы записываем ВСЕГДА — departure может быть на проверке, но часы корректны
+        # Парный arrival: часы записываем всегда
         if paired_arrival_id:
             if is_double_shift:
                 sb_patch(
                     f"/rest/v1/events?id=eq.{paired_arrival_id}",
-                    {"status": "needs_review", "fraud_flags": ["double_shift"], "hours": hours},
+                    {"status": "done", "fraud_flags": ["double_shift"], "hours": hours},
                 )
             else:
                 arrival_status = "needs_review" if go_review else "done"
