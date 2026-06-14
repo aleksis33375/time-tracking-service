@@ -560,7 +560,7 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
     if current_event.get("event_type") != "departure":
         return (None, None, False, False)
 
-    ts_str = current_event.get("photo_timestamp")
+    ts_str = current_event.get("photo_timestamp") or current_event.get("created_at")
     if not ts_str or not employee_id:
         return (None, None, False, False)
 
@@ -578,7 +578,7 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
         f"?employee_id=eq.{employee_id}"
         f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
         f"&photo_timestamp=lt.{_ts_for_url(dep_ts)}"
-        f"&status=in.(done,processing,needs_review)"
+        f"&status=in.(done,processing,needs_review,pending)"
         f"&select=id,event_type,photo_timestamp,created_at"
         f"&order=photo_timestamp.asc",
     )
@@ -594,7 +594,7 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
         f"&photo_timestamp=is.null"
         f"&created_at=gte.{_ts_for_url(window_start_created)}"
         f"&created_at=lt.{_ts_for_url(dep_created)}"
-        f"&status=in.(done,processing,needs_review)"
+        f"&status=in.(done,processing,needs_review,pending)"
         f"&select=id,event_type,photo_timestamp,created_at",
     )
     if not isinstance(null_ts_rows, list):
@@ -685,7 +685,7 @@ def check_duplicate_arrival(employee_id: str, current_event: dict) -> bool:
         f"?employee_id=eq.{employee_id}"
         f"&photo_timestamp=gte.{_ts_for_url(window_start)}"
         f"&photo_timestamp=lt.{_ts_for_url(arr_ts)}"
-        f"&status=in.(done,processing,needs_review)"
+        f"&status=in.(done,processing,needs_review,pending)"
         f"&select=id,event_type,photo_timestamp"
         f"&order=photo_timestamp.asc",
     )

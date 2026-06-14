@@ -180,8 +180,7 @@ async function handlePhoto(msg) {
     photo_time:  stampTimestamp,
   });
 
-  // AI-worker запускается по cron каждые 5 мин — дополнительный trigger убран
-  // (массовые dispatch в 06:00 при одновременном входе рабочих вызывали сбои GitHub Actions)
+  waitUntil(triggerAiWorker());
 }
 
 // ── Caption parser ────────────────────────────────────────────────────────────
