@@ -34,11 +34,16 @@ def compute_encoding(photo_bytes: bytes) -> list:
         tmp.write(photo_bytes)
         tmp_path = tmp.name
     try:
-        image     = face_recognition.load_image_file(tmp_path)
-        encodings = face_recognition.face_encodings(image, num_jitters=3)
-        if not encodings:
-            raise RuntimeError("Лицо на фото не найдено")
-        return encodings[0].tolist()
+        image = face_recognition.load_image_file(tmp_path)
+        # Пробуем upsample 1→2→3 для дальних/мелких лиц
+        for upsample in [1, 2, 3]:
+            locations = face_recognition.face_locations(image, number_of_times_to_upsample=upsample)
+            if locations:
+                print(f"  Лицо найдено (upsample={upsample}): {locations[0]}")
+                encodings = face_recognition.face_encodings(image, known_face_locations=locations, num_jitters=3)
+                if encodings:
+                    return encodings[0].tolist()
+        raise RuntimeError("Лицо на фото не найдено даже с upsample=3")
     finally:
         os.unlink(tmp_path)
 
