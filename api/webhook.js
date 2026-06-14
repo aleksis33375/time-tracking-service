@@ -119,19 +119,19 @@ async function handlePhoto(msg) {
     return;
   }
 
+  // Fix 3.1: дедупликация по (chat_id, telegram_message_id) — до загрузки фото
+  {
+    const existing = await supabaseFetch(`/rest/v1/events?chat_id=eq.${encodeURIComponent(String(chatId))}&telegram_message_id=eq.${encodeURIComponent(String(messageId))}&select=id&limit=1`);
+    if (Array.isArray(existing) && existing.length > 0) {
+      await logToSupabase('warn', 'webhook-handler', 'Duplicate Telegram update skipped (message_id)', { chatId, messageId });
+      return;
+    }
+  }
+
   if (compressedBuffer) {
     photoUrl = await uploadPhotoToStorage(compressedBuffer, chatId, messageId);
     if (!photoUrl) {
       await logToSupabase('warn', 'webhook-handler', 'Failed to upload photo to storage', { chatId, messageId });
-    }
-  }
-
-  // BUG-045: дедупликация — Telegram может повторить update при недоступности webhook
-  if (photoUrl) {
-    const existing = await supabaseFetch(`/rest/v1/events?photo_url=eq.${encodeURIComponent(photoUrl)}&select=id&limit=1`);
-    if (Array.isArray(existing) && existing.length > 0) {
-      await logToSupabase('warn', 'webhook-handler', 'Duplicate Telegram update skipped', { chatId, messageId });
-      return;
     }
   }
 
@@ -150,8 +150,9 @@ async function handlePhoto(msg) {
     name_from_photo:    caption.nameFromPhoto,
     event_type:         caption.eventType,
     event_type_raw:     caption.eventTypeRaw,
-    telegram_file_id:   largest.file_id,   // BUG-076: сохраняем для восстановления при сбое загрузки
+    telegram_file_id:   largest.file_id,
     telegram_message_id: String(messageId),
+    chat_id:            String(chatId),
     fraud_flags:        [
       ...(!photoUrl    ? ['no_photo']      : []),
       ...(!stampTimestamp ? ['no_photo_time'] : []),
