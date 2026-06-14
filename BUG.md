@@ -864,3 +864,63 @@ if event_type is None:
 - **Статус:** ✅ Принято / Accepted Risk — 2026-06-13
 - **Описание:** `waitUntil()` позволяет Vercel завершить HTTP-ответ (200 OK Telegram) и затем продолжить async-обработку. Но Vercel не гарантирует что задача завершится — функция может быть убита до `insertEvent()`. Telegram уже получил 200 → повторов не будет → событие теряется. Ранее документировалось как BUG-001 (OCR-timeout). После удаления OCR вероятность снизилась: webhook теперь только EXIF + сжатие + insert (~2-3 сек) — значительно меньше 60-секундного лимита.
 - **Решение:** Текущий риск приемлем. Мониторить Vercel Logs на `Timeout Error`. При повторении — убрать `waitUntil()` и делать insert синхронно (до return 200).
+
+---
+
+### BUG-070: GitHub Actions cron запускается 1-2 раза в час вместо каждых 5 мин
+
+- **Файл:** `.github/workflows/ai-worker.yml`
+- **Приоритет:** 🔴 Критический
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** GitHub Actions throttles `*/5 * * * *` cron в shared runners — реально запускался ~1-2 раза в час. 265 событий застряли в `pending` на часы.
+- **Решение:** Добавлен вызов `waitUntil(triggerAiWorker())` в `api/webhook.js` после каждого нового события. Теперь AI Worker запускается немедленно после получения фото.
+
+---
+
+### BUG-071: ocr_worker.py — isoformat() в URL даёт 400 от Supabase
+
+- **Файл:** `ai-worker/ocr_worker.py`
+- **Приоритет:** 🔴 Критический
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** `datetime.now(timezone.utc).isoformat()` возвращает `2026-06-14T09:23:45+00:00`. Знак `+` в query string URL воспринимается сервером как пробел → Supabase REST API возвращал 400. OCR Worker падал при каждом запуске.
+- **Решение:** Добавлен `.replace('+00:00', 'Z')` в `run_regular()`.
+
+---
+
+### BUG-072: process_events.py — crash при double_shift без photo_timestamp
+
+- **Файл:** `ai-worker/process_events.py`, строка 964
+- **Приоритет:** 🔴 Критический
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** После Fix 1.2 (fallback created_at) уходы без photo_timestamp стали доходить до блока `is_double_shift`. Код `(event.get("photo_timestamp") or "").replace("Z", ...)` возвращал `""` → `datetime.fromisoformat("")` → ValueError crash.
+- **Решение:** Изменено на `(event.get("photo_timestamp") or event.get("created_at") or "")`.
+
+---
+
+### BUG-073: Уходы без photo_timestamp не считали часы
+
+- **Файл:** `ai-worker/process_events.py`, строка 563
+- **Приоритет:** 🟠 Высокий
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** `ts_str = current_event.get("photo_timestamp")` — при photo_timestamp=null функция сразу возвращала `(None, None, False, False)`. ~60 уходов не получали часы, парные приходы оставались без hours.
+- **Решение:** `ts_str = current_event.get("photo_timestamp") or current_event.get("created_at")`.
+
+---
+
+### BUG-074: Pending приходы невидимы при поиске пары для уходов
+
+- **Файл:** `ai-worker/process_events.py`, строки 581, 597, 685
+- **Приоритет:** 🟠 Высокий
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** Фильтр `status=in.(done,processing,needs_review)` не включал `pending`. Если приход застрял в очереди, уход его не находил и помечал себя дублем (~80-100 ложных дублей).
+- **Решение:** Добавлен `pending` во все три фильтра.
+
+---
+
+### BUG-075: Отрицательные часы при неверной паре arrival/departure
+
+- **Файл:** `ai-worker/process_events.py`, строка 633
+- **Приоритет:** 🟠 Высокий
+- **Статус:** ✅ Исправлено — 2026-06-15
+- **Описание:** При ошибке OCR (неверное время) или неправильном сопоставлении пары departure timestamp мог оказаться раньше arrival → `hours < 0`. Отрицательные часы попадали в табель и запутывали итоги.
+- **Решение:** Добавлена проверка `if hours < 0: return (None, None, False, False)` — невалидная пара отбрасывается.
