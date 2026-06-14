@@ -3329,7 +3329,7 @@
       }
 
       // Флаги, которые НЕ показывают ⚠️ в табеле — технические ограничения, не мошенничество
-      const INFORMATIONAL_FLAGS = new Set(['no_photo_time', 'incomplete_day', 'time_from_telegram']);
+      const INFORMATIONAL_FLAGS = new Set(['no_photo_time', 'incomplete_day', 'time_from_telegram', 'double_shift', 'face_cross_match']);
 
       // Карта текущего периода: empId → dateKey → { hours, review, fraud, photo_url, double_shift, shift_hours, events }
       // Pair-walker: группируем события по сотруднику, сортируем по времени, строим пары arrival→departure.

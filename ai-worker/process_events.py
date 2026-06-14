@@ -447,6 +447,37 @@ def verify_face(photo_url: str, employee: dict) -> bool | None:
     return bool(matches[0])
 
 
+def find_employee_by_face(photo_url: str, employees_cache: list, exclude_id: str | None = None) -> dict | None:
+    """
+    Fallback face search: если name-match дал face_mismatch, ищем по эмбеддингам всех сотрудников.
+    Возвращает лучшего кандидата (dist < FACE_TOLERANCE) или None.
+    """
+    photo_bytes = download_storage_photo(photo_url)
+    if not photo_bytes:
+        return None
+    try:
+        encoding = compute_face_encoding(photo_bytes)
+    except TimeoutError:
+        return None
+    if encoding is None:
+        return None
+
+    best_emp  = None
+    best_dist = FACE_TOLERANCE
+    for emp in employees_cache:
+        if exclude_id and emp.get("id") == exclude_id:
+            continue
+        ref = parse_embedding(emp.get("face_embedding"))
+        if ref is None:
+            continue
+        dist = float(face_recognition.face_distance([ref], encoding)[0])
+        if dist < best_dist:
+            best_dist = dist
+            best_emp  = emp
+
+    return best_emp
+
+
 def bootstrap_face_embedding(employee: dict, photo_url: str) -> bool:
     """
     Первое фото сотрудника (face_embedding отсутствует) → сохраняем как эталон.
@@ -862,8 +893,9 @@ def main() -> None:
                     print(f"     auto-created: {employee['display_name']} ({employee['id']})", flush=True)
 
         # п.6 Face recognition верификация
-        photo_url = event.get("photo_url") or ""
+        photo_url    = event.get("photo_url") or ""
         face_timed_out = False
+        _cross_match   = False
 
         if not photo_url:
             # Фото не было загружено — пропускаем распознавание, продолжаем обработку
@@ -894,6 +926,25 @@ def main() -> None:
                 face_match = None
                 face_timed_out = True
                 log("warning", "Face recognition timeout — routed to needs_review", {"event_id": eid})
+
+            # Fallback: если лицо не совпало с найденным по имени — ищем по всем сотрудникам
+            if face_match is False and not face_timed_out:
+                try:
+                    cross_emp = find_employee_by_face(
+                        photo_url, employees_cache, exclude_id=(employee or {}).get("id")
+                    )
+                except TimeoutError:
+                    cross_emp = None
+                if cross_emp:
+                    print(f"     cross-face: {(employee or {}).get('display_name','?')} → {cross_emp['display_name']}", flush=True)
+                    employee   = cross_emp
+                    face_match = True
+                    _cross_match = True
+                else:
+                    _cross_match = False
+            else:
+                _cross_match = False
+
         print(f"     face_match: {face_match}", flush=True)
 
         # п.7 Сборка fraud_flags, маршрутизация на needs_review
@@ -902,6 +953,8 @@ def main() -> None:
             fraud_flags.append("no_photo")  # страховка: webhook мог не поставить флаг
         if face_timed_out and "face_timeout" not in fraud_flags:
             fraud_flags.append("face_timeout")
+        if _cross_match and "face_cross_match" not in fraud_flags:
+            fraud_flags.append("face_cross_match")  # информационный: распознан по лицу, не по имени
         go_review    = needs_review(employee, face_match, fraud_flags)
         print(f"     fraud_flags: {fraud_flags} | needs_review: {go_review}", flush=True)
 
