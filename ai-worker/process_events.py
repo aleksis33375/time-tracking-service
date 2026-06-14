@@ -962,7 +962,7 @@ def main() -> None:
         # Двойная смена → флагуем предыдущую пару + текущее departure идёт на проверку
         if is_double_shift:
             dep_ts_dt = datetime.fromisoformat(
-                (event.get("photo_timestamp") or "").replace("Z", "+00:00")
+                (event.get("photo_timestamp") or event.get("created_at") or "").replace("Z", "+00:00")
             )
             _flag_previous_pair_as_double(employee["id"], dep_ts_dt)
             if "double_shift" not in fraud_flags:
