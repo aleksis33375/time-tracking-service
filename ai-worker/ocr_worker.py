@@ -16,7 +16,7 @@ import argparse
 from datetime import datetime, timezone, timedelta
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance
 import requests
 import easyocr
 
@@ -41,6 +41,11 @@ EN_MONTHS = {
 
 def prepare_text(raw: str) -> str:
     t = raw
+    # Убираем день недели перед датой: "Среда, 13 июня" → "13 июня"
+    t = re.sub(
+        r'(понедельник|вторник|среда|четверг|пятница|суббота|воскресенье),?\s*',
+        '', t, flags=re.IGNORECASE
+    )
     # OCR шум: ведущая "1" перед временем (" 123:55:30" → " 23:55:30")
     t = re.sub(r'\s1(\d{2}:\d{2}:\d{2})', r' \1', t)
     t = re.sub(r'(\d{2})1(\d{2}):(\d{2})', r'\1:\2:\3', t)
@@ -91,7 +96,7 @@ def try_extract(text: str, created_date: str = None) -> dict:
 
     time_  = re.search(r'(\d{1,2}):(\d{2}):(\d{2})', t)
     timehm = re.search(r'\b(\d{1,2}):(\d{2})\b', t)
-    dmy    = re.search(r'(\d{1,2})[./](\d{1,2})[./](\d{2,4})', t)
+    dmy    = re.search(r'(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})', t)
     ymd    = re.search(r'(\d{4})[-./](\d{2})[-./](\d{2})', t)
 
     def norm_year(y): return str(2000 + int(y)) if len(y) == 2 else y
@@ -167,6 +172,28 @@ def extract_ocr_timestamp(image_bytes: bytes, reader: easyocr.Reader, created_da
         res_b    = try_extract(text_b, created_date)
         if res_b['found']:
             return to_iso(res_b)
+
+        # Pass C: кроп нижней четверти (водяной знак со штампом обычно внизу)
+        h_px     = img_arr.shape[0]
+        bottom   = img_arr[int(h_px * 0.75):]
+        results3 = reader.readtext(bottom)
+        text_c   = ' '.join(t for _, t, _ in results3)
+        if debug:
+            print(f'    [DEBUG] Pass C raw: {repr(text_c[:300])}')
+        res_c    = try_extract(text_c, created_date)
+        if res_c['found']:
+            return to_iso(res_c)
+
+        # Pass D: повышение контраста × 2 (помогает при тусклых штампах)
+        enhanced  = ImageEnhance.Contrast(img).enhance(2.0)
+        enh_arr   = np.array(enhanced)
+        results4  = reader.readtext(enh_arr)
+        text_d    = ' '.join(t for _, t, _ in results4)
+        if debug:
+            print(f'    [DEBUG] Pass D raw: {repr(text_d[:300])}')
+        res_d     = try_extract(text_d, created_date)
+        if res_d['found']:
+            return to_iso(res_d)
 
     except Exception as e:
         print(f'    EasyOCR error: {e}')
