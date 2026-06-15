@@ -3098,14 +3098,17 @@
         ? 'display:grid;grid-template-columns:repeat(2,150px);gap:6px;'
         : 'display:flex;gap:6px;';
 
-      content.innerHTML = `<div class="tip-photos" style="${wrapStyle}">${loaded.map(ev => `
-        <div class="tip-photo-item">
+      content.innerHTML = `<div class="tip-photos" style="${wrapStyle}">${loaded.map(ev => {
+        // original_arrival: событие физически departure, но фото подписано "Приход"
+        const displayType = (ev.flags && ev.flags.includes('original_arrival')) ? 'arrival' : ev.type;
+        return `<div class="tip-photo-item">
           ${ev.signedUrl
             ? `<img src="${ev.signedUrl}" alt="">`
             : '<div class="tip-photo-no">Нет фото</div>'}
-          <span class="tip-type">${TYPE[ev.type] || escHtml(ev.type)}</span>
+          <span class="tip-type">${TYPE[displayType] || escHtml(displayType)}</span>
           <span class="tip-time">${fmtTs(ev.ts)}</span>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
       </div>`;
 
       positionTip(e.clientX, e.clientY);
@@ -3375,7 +3378,7 @@
                                       double_shift: false, shift_hours: [], events: [] };
             const photoCell = eMap[empId][photoDk];
             if (ev.photo_url) {
-              photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: evTs });
+              photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: evTs, flags: ev.fraud_flags || [] });
             }
             if (ev.status === 'needs_review') photoCell.review = true;
             if (flags.some(f => !INFORMATIONAL_FLAGS.has(f))) photoCell.fraud = true;
@@ -3547,7 +3550,7 @@
                 totalHours += dsTotal;
                 const parts = cell.hours ? [cell.hours, ...cell.shift_hours] : cell.shift_hours;
                 const tip = `title="Двойная смена: ${parts.map(h=>Math.round(h*100)/100+'ч').join(' + ')}"`;
-                return `<td class="ts-day" style="background:#EFF6FF;color:#1D4ED8;font-weight:700;" ${tip}${photoAttr}>${dsTotal} ✦</td>`;
+                return `<td class="ts-day" style="background:#EFF6FF;color:#1D4ED8;font-weight:700;" ${tip}${photoAttr}>${dsTotal} ✦ ?</td>`;
               }
             }
             if (cell.hours != null) {
