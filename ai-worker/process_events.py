@@ -584,7 +584,7 @@ def moscow_date_of(utc_iso: str) -> str:
     return (dt + MOSCOW_OFFSET).strftime("%Y-%m-%d")
 
 
-def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None, str | None, bool, bool]:
+def calculate_hours(employee_id: str, current_event: dict) -> tuple[int | None, str | None, bool, bool]:
     """
     Для departure: buffer-state алгоритм детекции дублей и двойных смен.
     Возвращает (hours, paired_arrival_id, is_double_shift, is_duplicate).
@@ -662,10 +662,10 @@ def calculate_hours(employee_id: str, current_event: dict) -> tuple[float | None
     if not arr_ts_str:
         return (None, None, False, False)
     arr_ts = parse_ts(arr_ts_str)
-    hours  = round((dep_ts - arr_ts).total_seconds() / 3600, 2)
-    if hours < 0:
+    minutes = round((dep_ts - arr_ts).total_seconds() / 60)
+    if minutes < 0:
         return (None, None, False, False)
-    return (hours, open_arrival_id, closed_pairs >= 1, False)
+    return (minutes, open_arrival_id, closed_pairs >= 1, False)
 
 
 def _flag_previous_pair_as_double(employee_id: str, dep_ts: datetime) -> None:
@@ -740,17 +740,17 @@ def check_duplicate_arrival(employee_id: str, current_event: dict) -> bool:
 
 # ── п.10 Неполный день + п.11 Выходные ───────────────────────────────────────
 
-def is_incomplete_day(employee: dict | None, event_type: str | None, hours: float | None) -> bool:
+def is_incomplete_day(employee: dict | None, event_type: str | None, minutes: int | None) -> bool:
     """
     Неполный день — сотрудник найден и тип определён,
-    но пара приход/уход за день не сложилась (hours=None).
+    но пара приход/уход за день не сложилась (minutes=None).
 
     П.11: выходные обрабатываются как будние —
     никакой проверки дня недели нет намеренно.
     """
     if employee is None or event_type is None:
         return False   # другие причины для review уже учтены
-    return hours is None
+    return minutes is None
 
 # ── п.12 Обновление events: done / п.13 needs_review ─────────────────────────
 
@@ -758,12 +758,12 @@ def finalize_event(
     event_id:    str,
     employee:    dict | None,
     event_type:  str | None,
-    hours:       float | None,
+    minutes:     int | None,
     fraud_flags: list[str],
     go_review:   bool,
 ) -> None:
     """
-    П.12: status=done   — всё распознано, часы посчитаны.
+    П.12: status=done   — всё распознано, минуты посчитаны.
     П.13: status=needs_review — сотрудник не найден, fraud_flags или неполный день.
     """
     if go_review:
@@ -775,8 +775,8 @@ def finalize_event(
             body["employee_id"] = employee["id"]
         if event_type:
             body["event_type"] = event_type
-        if hours is not None:
-            body["hours"] = hours             # сохраняем для double_shift-агрегации
+        if minutes is not None:
+            body["duration_min"] = minutes
     else:
         body = {
             "status":      "done",
@@ -784,9 +784,9 @@ def finalize_event(
             "event_type":  event_type,
             "fraud_flags": fraud_flags,
         }
-        if hours is not None:
-            body["hours"] = hours
-        # hours=None (arrival) — не трогаем существующее значение в БД
+        if minutes is not None:
+            body["duration_min"] = minutes
+        # duration_min=None (arrival) — не трогаем существующее значение в БД
 
     result = sb_patch(f"/rest/v1/events?id=eq.{event_id}", body, prefer="return=representation")
     expected_status = "needs_review" if go_review else "done"
@@ -966,16 +966,16 @@ def main() -> None:
                 fraud_flags.append("unknown_event_type")
             go_review = True   # неизвестный тип → тоже на проверку
 
-        # п.9 Расчёт часов — всегда если сотрудник и тип известны
-        hours             = None
+        # п.9 Расчёт минут — всегда если сотрудник и тип известны
+        minutes           = None
         paired_arrival_id = None
         is_double_shift   = False
         is_duplicate      = False
         if employee and event_type:
-            hours, paired_arrival_id, is_double_shift, is_duplicate = calculate_hours(
+            minutes, paired_arrival_id, is_double_shift, is_duplicate = calculate_hours(
                 employee["id"], event
             )
-        print(f"     hours: {hours} | double: {is_double_shift} | dup: {is_duplicate}", flush=True)
+        print(f"     minutes: {minutes} | double: {is_double_shift} | dup: {is_duplicate}", flush=True)
 
         # Дублирующий departure → status=duplicate, дальше не обрабатываем
         if is_duplicate:
@@ -1026,27 +1026,27 @@ def main() -> None:
             print(f"     double shift detected → auto-approved", flush=True)
 
         # п.10 Неполный день — информационный флаг, НЕ блокирует автоматику
-        if is_incomplete_day(employee, event_type, hours):
+        if is_incomplete_day(employee, event_type, minutes):
             if "incomplete_day" not in fraud_flags:
                 fraud_flags.append("incomplete_day")
             print(f"     incomplete day — flagged, auto-approved", flush=True)
 
         # п.12/13 Финализация события
-        finalize_event(eid, employee, event_type, hours, fraud_flags, go_review)
+        finalize_event(eid, employee, event_type, minutes, fraud_flags, go_review)
         print(f"     → {'needs_review' if go_review else 'done'}", flush=True)
 
-        # Парный arrival: часы записываем всегда
+        # Парный arrival: минуты записываем всегда
         if paired_arrival_id:
             if is_double_shift:
                 sb_patch(
                     f"/rest/v1/events?id=eq.{paired_arrival_id}",
-                    {"status": "done", "fraud_flags": ["double_shift"], "hours": hours},
+                    {"status": "done", "fraud_flags": ["double_shift"], "duration_min": minutes},
                 )
             else:
                 arrival_status = "needs_review" if go_review else "done"
                 sb_patch(
                     f"/rest/v1/events?id=eq.{paired_arrival_id}",
-                    {"status": arrival_status, "hours": hours},
+                    {"status": arrival_status, "duration_min": minutes},
                 )
 
         # п.14 Уведомление руководителю если needs_review
@@ -1067,7 +1067,7 @@ def main() -> None:
                 "event_id":   eid,
                 "employee":   employee["display_name"],
                 "event_type": event_type,
-                "hours":      hours,
+                "minutes":    minutes,
             })
             done_count += 1
 
