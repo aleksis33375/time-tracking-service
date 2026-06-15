@@ -3375,7 +3375,7 @@
           if (photoDk >= days[0] && photoDk <= days[days.length - 1]) {
             if (!eMap[empId][photoDk])
               eMap[empId][photoDk] = { hours: null, review: false, fraud: false, photo_url: null,
-                                      double_shift: false, shift_hours: [], events: [] };
+                                      double_shift: false, shift_hours: [], events: [], orphan_dep: false };
             const photoCell = eMap[empId][photoDk];
             if (ev.photo_url) {
               photoCell.events.push({ type: ev.event_type || 'unknown', url: ev.photo_url, ts: evTs, flags: ev.fraud_flags || [] });
@@ -3390,7 +3390,7 @@
 
           if (!eMap[empId][ownDk])
             eMap[empId][ownDk] = { hours: null, review: false, fraud: false, photo_url: null,
-                                   double_shift: false, shift_hours: [], events: [] };
+                                   double_shift: false, shift_hours: [], events: [], orphan_dep: false };
           const cell = eMap[empId][ownDk];
 
           // Всегда считаем часы по timestamps пары arrival→departure.
@@ -3421,6 +3421,19 @@
             cell.hours = (cell.hours || 0) + effHours;
             cell.photo_url = ev.photo_url || cell.photo_url;
           }
+        }
+
+        // Orphan departures: Уход без парного Прихода → помечаем ячейку знаком ?
+        for (let i = 0; i < evs.length; i++) {
+          if (evs[i].event_type !== 'departure') continue;
+          if (depTargetDk[i] !== undefined) continue; // есть пара — не orphan
+          const depTs = evs[i].photo_timestamp ?? evs[i].created_at;
+          const depDk = toMskDate(depTs);
+          if (depDk < days[0] || depDk > days[days.length - 1]) continue;
+          if (!eMap[empId][depDk])
+            eMap[empId][depDk] = { hours: null, review: false, fraud: false, photo_url: null,
+                                   double_shift: false, shift_hours: [], events: [], orphan_dep: false };
+          eMap[empId][depDk].orphan_dep = true;
         }
       }
 
@@ -3559,7 +3572,8 @@
                 ? 'background:var(--danger-bg);color:var(--danger);font-weight:600;'
                 : wkndStyle;
               const warn = cell.fraud ? ' ⚠️' : '';
-              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${Math.round(cell.hours*100)/100}${warn}</td>`;
+              const orphan = cell.orphan_dep ? ' ?' : '';
+              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${Math.round(cell.hours*100)/100}${warn}${orphan}</td>`;
             }
             // Событие есть, но часы не посчитаны (неполный день или needs_review)
             const incStyle = cell.review
