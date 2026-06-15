@@ -962,7 +962,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Часов</label>
-            <input class="input" type="number" id="rv-edit-hours" placeholder="Напр. 9.5" min="0" max="24" step="0.5">
+            <input class="input" type="text" id="rv-edit-hours" placeholder="Напр. 9.18 (9ч 18мин)">
           </div>
         </div>
         <div class="form-group" style="margin-bottom:0;">
@@ -1434,7 +1434,7 @@
 
       const [employees, todayEvents, reviewAll] = await Promise.all([
         guardedFetch('/rest/v1/employees?select=id,display_name,team,position&deleted_at=is.null&order=display_name.asc'),
-        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status,fraud_flags,name_from_photo&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,duration_min,status,fraud_flags,name_from_photo&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}&order=photo_timestamp.asc`),
         guardedFetch(`/rest/v1/events?select=id&status=eq.needs_review&photo_timestamp=gte.${todayStartUTC}&photo_timestamp=lte.${todayEndUTC}`),
       ]);
 
@@ -1495,7 +1495,7 @@
         } else if (ev.event_type === 'departure') {
           if (!slot.depart || ev.photo_timestamp > slot.depart) slot.depart = ev.photo_timestamp;
         }
-        if (ev.hours != null) slot.hours = ev.hours;
+        if (ev.duration_min != null) slot.hours = ev.duration_min;
         slot.statuses.push(ev.status);
         if (ev.fraud_flags) {
           const f = parseFraudFlags(ev.fraud_flags);
@@ -1549,7 +1549,7 @@
         if (worstStatus === 'needs_review') {
           statusHtml = `<button onclick="goTo('review',${JSON.stringify({highlightEmployeeId: eid})})" style="background:none;border:none;padding:0;color:var(--danger);font-weight:600;cursor:pointer;">⚠ Проверить</button>`;
         }
-        const hoursHtml = slot.hours != null ? `<strong>${slot.hours.toFixed(1)}</strong>` : '—';
+        const hoursHtml = slot.hours != null ? `<strong>${toHM(slot.hours)}</strong>` : '—';
         const fraudHtml = slot.frauds.length ? ` <span title="${slot.frauds.join(', ')}" style="cursor:default;">⚠️</span>` : '';
 
         rows += `<tr style="${rowBg}border-bottom:1px solid var(--border);">
@@ -1609,7 +1609,7 @@
       const endUTC   = new Date(dateVal + 'T23:59:59+03:00').toISOString();
 
       const [events, emps] = await Promise.all([
-        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&order=photo_timestamp.asc&limit=1000`),
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,duration_min,status,fraud_flags,photo_url,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&order=photo_timestamp.asc&limit=1000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null'),
       ]);
 
@@ -1715,7 +1715,7 @@
           <td style="padding:9px 10px;font-weight:500;">${escHtml(name)}${fraudTip}</td>
           <td style="padding:9px 10px;color:var(--muted);">${escHtml(team)}</td>
           <td style="padding:9px 10px;text-align:center;">${TYPE_LABEL[ev.event_type] || `<span style="color:var(--muted);">${escHtml(ev.event_type_raw || '?')}</span>`}</td>
-          <td style="padding:9px 10px;text-align:center;">${ev.hours != null ? `<strong>${parseFloat(ev.hours).toFixed(1)}</strong>` : '—'}</td>
+          <td style="padding:9px 10px;text-align:center;">${ev.duration_min != null ? `<strong>${toHM(ev.duration_min)}</strong>` : (ev.hours != null ? `<strong>${toHM(Math.round(ev.hours*60))}</strong>` : '—')}</td>
           <td style="padding:9px 10px;text-align:center;">${STATUS_LABEL[ev.status] || escHtml(ev.status)}</td>
           <td style="padding:9px 10px;text-align:center;">${photoCell}</td>
         </tr>`;
@@ -1758,7 +1758,7 @@
       }
 
       const [events, emps] = await Promise.all([
-        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review${dateFilter}&order=photo_timestamp.desc&limit=2000`),
+        guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,event_type,event_type_raw,hours,duration_min,status,fraud_flags,photo_url,name_from_photo,postcode_from_photo&status=eq.needs_review${dateFilter}&order=photo_timestamp.desc&limit=2000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team&deleted_at=is.null&order=team.asc,display_name.asc'),
       ]);
 
@@ -1857,14 +1857,14 @@
           const renderShift = (arr, dep, idx) => {
             const timeA = arr ? fmtTime(arr.photo_timestamp) : '—';
             const timeD = dep ? fmtTime(dep.photo_timestamp) : '—';
-            const h     = dep && dep.hours != null ? dep.hours + ' ч' : '—';
+            const h     = dep && dep.duration_min != null ? toHM(dep.duration_min) + ' ч' : '—';
             return `<div style="font-size:13px;margin-bottom:3px;"><b>Смена ${idx}</b>: ${timeA} → ${timeD} = <b>${h}</b></div>`;
           };
           const shift1 = renderShift(arrivals[0], departures[0], 1);
           const shift2 = renderShift(arrivals[1], departures[1], 2);
-          const h1 = departures[0] && departures[0].hours != null ? departures[0].hours : 0;
-          const h2 = departures[1] && departures[1].hours != null ? departures[1].hours : 0;
-          const total  = (h1 + h2).toFixed(2);
+          const h1 = departures[0] && departures[0].duration_min != null ? departures[0].duration_min : 0;
+          const h2 = departures[1] && departures[1].duration_min != null ? departures[1].duration_min : 0;
+          const total  = toHM(h1 + h2);
           const empJson = escHtml(JSON.stringify(empId));
           const dkJson  = escHtml(JSON.stringify(dk));
 
@@ -2018,7 +2018,7 @@
 
       // Тип и часы
       document.getElementById('rv-edit-event-type').value = ev.event_type || 'arrival';
-      document.getElementById('rv-edit-hours').value      = ev.hours != null ? ev.hours : '';
+      document.getElementById('rv-edit-hours').value      = ev.duration_min != null ? toHM(ev.duration_min) : (ev.hours != null ? toHM(Math.round(ev.hours*60)) : '');
       document.getElementById('rv-edit-status').value     = 'done';
 
       // Кнопка сохранения
@@ -2046,20 +2046,9 @@
 
       // Валидация hours
       if (hoursVal !== '') {
-        const hours = parseFloat(hoursVal);
-        if (isNaN(hours)) {
-          errEl.textContent = 'Часы должны быть числом';
-          errEl.style.display = '';
-          return;
-        }
-        if (hours < 0) {
-          errEl.textContent = 'Часы не могут быть отрицательными';
-          errEl.style.display = '';
-          return;
-        }
-        if (hours > 24) {
-          errEl.textContent = 'Часы не могут превышать 24 в день';
-          errEl.style.display = '';
+        const mins = hmToMin(hoursVal);
+        if (mins == null || isNaN(mins) || mins < 0 || mins > 1440) {
+          alert('Введи время в формате 9.18 (9 часов 18 минут), максимум 24.00');
           return;
         }
       }
@@ -2081,7 +2070,7 @@
         status:      status,
         fraud_flags: [],
       };
-      if (hoursVal !== '') patch.hours = Math.round(parseFloat(hoursVal) * 100) / 100;
+      if (hoursVal !== '') patch.duration_min = hmToMin(hoursVal);
 
       const token = getToken();
       let res;
@@ -2188,7 +2177,7 @@
       const endUTC   = new Date(Date.UTC(y, m + 1, 1) - 3 * 3600000 - 1).toISOString();
 
       const [events, emps, anomalies] = await Promise.all([
-        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=in.(done,needs_review)&order=photo_timestamp.asc&limit=5000`),
+        guardedFetch(`/rest/v1/events?select=employee_id,photo_timestamp,event_type,hours,duration_min,status&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=in.(done,needs_review)&order=photo_timestamp.asc&limit=5000`),
         guardedFetch('/rest/v1/employees?select=id,display_name,team,daily_rate,hourly_rate&deleted_at=is.null'),
         guardedFetch(`/rest/v1/events?select=id,employee_id,photo_timestamp,fraud_flags,name_from_photo&photo_timestamp=gte.${startUTC}&photo_timestamp=lte.${endUTC}&status=eq.needs_review&order=photo_timestamp.desc&limit=1000`),
       ]);
@@ -2216,12 +2205,12 @@
       }
 
       for (const ev of evArr) {
-        if (!ev.photo_timestamp || ev.hours == null) continue;
+        if (!ev.photo_timestamp || ev.duration_min == null) continue;
         if (ev.event_type !== 'arrival') continue;
         const msk = new Date(new Date(ev.photo_timestamp).getTime() + 3 * 3600000);
         const key = `${msk.getUTCFullYear()}-${String(msk.getUTCMonth()+1).padStart(2,'0')}-${String(msk.getUTCDate()).padStart(2,'0')}`;
         if (!dayTotals[key]) continue;
-        dayTotals[key].hours += ev.hours;
+        dayTotals[key].hours += ev.duration_min;
         if (ev.employee_id) dayTotals[key].empIds.add(ev.employee_id);
 
         if (ev.employee_id) {
@@ -2229,11 +2218,11 @@
           if (emp) {
             const team = emp.team || '—';
             if (!teamTotals[team]) teamTotals[team] = { hours: 0, payroll: 0 };
-            teamTotals[team].hours += ev.hours;
+            teamTotals[team].hours += ev.duration_min;
             const rate = emp.hourly_rate
               ? parseFloat(emp.hourly_rate)
               : (emp.daily_rate ? parseFloat(emp.daily_rate) / 8 : 0);
-            teamTotals[team].payroll += ev.hours * rate;
+            teamTotals[team].payroll += (ev.duration_min / 60) * rate;
           }
         }
       }
@@ -2245,7 +2234,7 @@
       const avgPerDay    = workDays ? (Object.values(dayTotals).reduce((s, d) => s + d.empIds.size, 0) / workDays) : 0;
 
       document.getElementById('an-stat-fot').textContent     = totalPayroll ? totalPayroll.toLocaleString('ru', { maximumFractionDigits: 0 }) : '0';
-      document.getElementById('an-stat-hours').textContent   = totalHours   ? totalHours.toFixed(1)  : '0';
+      document.getElementById('an-stat-hours').textContent   = totalHours   ? toHM(totalHours)  : '0';
       document.getElementById('an-stat-avg').textContent     = avgPerDay    ? avgPerDay.toFixed(1)   : '0';
       document.getElementById('an-stat-anomaly').textContent = anArr.length || '0';
 
@@ -2297,7 +2286,7 @@
         const hColor= isWk ? '#F97316' : '#2563EB';
 
         svg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${color}" rx="2">
-          <title>${dk}: ${val.toFixed(1)} ч</title></rect>`;
+          <title>${dk}: ${toHM(val)} ч</title></rect>`;
         // При наведении — другой цвет (через CSS class не работает в SVG без стилей, используем title)
 
         const dayNum = parseInt(dk.slice(8));
@@ -2332,9 +2321,9 @@
         const cy   = padT + i * rowH;
 
         svg += `<text x="${padL - 8}" y="${cy + 15}" text-anchor="end" font-size="11" fill="#374151" font-weight="500">${escHtml(team.slice(0, 18))}</text>`;
-        svg += `<rect x="${padL}" y="${cy}" width="${barW.toFixed(1)}" height="22" fill="#93C5FD" rx="3"><title>${team}: ${payroll.toLocaleString('ru', {maximumFractionDigits:0})} ₽ / ${hours.toFixed(1)} ч</title></rect>`;
+        svg += `<rect x="${padL}" y="${cy}" width="${barW.toFixed(1)}" height="22" fill="#93C5FD" rx="3"><title>${team}: ${payroll.toLocaleString('ru', {maximumFractionDigits:0})} ₽ / ${toHM(hours)} ч</title></rect>`;
         svg += `<text x="${(padL + barW + 6).toFixed(1)}" y="${cy + 15}" font-size="11" fill="#2563EB" font-weight="600">${payroll.toLocaleString('ru', {maximumFractionDigits:0})} ₽</text>`;
-        svg += `<text x="${(padL + barW + 6).toFixed(1)}" y="${cy + 28}" font-size="10" fill="#6B7280">${hours.toFixed(1)} ч</text>`;
+        svg += `<text x="${(padL + barW + 6).toFixed(1)}" y="${cy + 28}" font-size="10" fill="#6B7280">${toHM(hours)} ч</text>`;
       });
       document.getElementById('an-chart-teams').innerHTML = svg;
     }
@@ -2790,6 +2779,24 @@
           <td><div style="display:flex;gap:6px;justify-content:flex-end;">${actions}</div></td>
         </tr>`;
       }).join('');
+    }
+
+    // Форматы ч.мм: 558 → "9.18", 480 → "8.00"
+    function toHM(min) {
+      if (min == null || isNaN(min)) return null;
+      const m = Math.round(Number(min));
+      const h = Math.floor(m / 60);
+      const mm = m % 60;
+      return h + '.' + String(mm).padStart(2, '0');
+    }
+    // "9.18" → 558, "9.5" → 570 (десятичный fallback)
+    function hmToMin(str) {
+      if (str === '' || str == null) return null;
+      const s = String(str).trim();
+      if (!s.includes('.')) return Math.round(parseFloat(s) * 60);
+      const [h, m = '0'] = s.split('.');
+      const mins = parseInt(m.padEnd(2, '0').slice(0, 2), 10) || 0;
+      return (parseInt(h, 10) || 0) * 60 + mins;
     }
 
     function escHtml(s) {
@@ -3307,14 +3314,14 @@
           '&deleted_at=is.null&order=team.asc,display_name.asc'
         ),
         guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,hours,status,fraud_flags,photo_url,event_type` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,hours,duration_min,status,fraud_flags,photo_url,event_type` +
           `&created_at=gte.${bufStartISO}&created_at=lt.${bufEndISO}` +
           `&status=in.(done,needs_review)&limit=5000`
         ),
         prevStartISO ? guardedFetch(
-          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,event_type,hours` +
+          `/rest/v1/events?select=employee_id,photo_timestamp,created_at,event_type,hours,duration_min` +
           `&created_at=gte.${prevStartISO}&created_at=lt.${prevEndISO}` +
-          `&status=eq.done&hours=not.is.null&limit=5000`
+          `&status=eq.done&duration_min=not.is.null&limit=5000`
         ) : Promise.resolve([])
       ]);
 
@@ -3401,24 +3408,24 @@
             if (evs[j].event_type === 'departure') { pairedDep = evs[j]; break; }
             if (evs[j].event_type === 'arrival')   break;
           }
-          let effHours = null;
+          let effMin = null;
           if (pairedDep) {
             const t1 = Math.floor(new Date(evTs).getTime() / 60000) * 60000;
             const t2 = Math.floor(new Date(pairedDep.photo_timestamp ?? pairedDep.created_at).getTime() / 60000) * 60000;
-            const diffH = (t2 - t1) / 3600000;
-            if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
-            // Fallback: timestamps дали невалидный диапазон — берём hours из БД
-            if (effHours == null && pairedDep.hours != null) effHours = pairedDep.hours;
+            const diffM = Math.round((t2 - t1) / 60000);
+            if (diffM > 0 && diffM < 960) effMin = diffM;
+            // Fallback: timestamps дали невалидный диапазон — берём duration_min из БД
+            if (effMin == null && pairedDep.duration_min != null) effMin = pairedDep.duration_min;
           }
-          // Fallback: одиночный arrival без paired departure — доверяем worker.hours
-          if (effHours == null) effHours = ev.hours;
-          if (effHours == null) continue;
+          // Fallback: одиночный arrival без paired departure — доверяем worker
+          if (effMin == null && ev.duration_min != null) effMin = ev.duration_min;
+          if (effMin == null) continue;
 
           if (flags.includes('double_shift')) {
             cell.double_shift = true;
-            cell.shift_hours.push(effHours);
+            cell.shift_hours.push(effMin);
           } else {
-            cell.hours = (cell.hours || 0) + effHours;
+            cell.hours = (cell.hours || 0) + effMin;
             cell.photo_url = ev.photo_url || cell.photo_url;
           }
         }
@@ -3459,17 +3466,17 @@
             if (evs[j].event_type === 'departure') { pairedDep = evs[j]; break; }
             if (evs[j].event_type === 'arrival')   break;
           }
-          let effHours = null;
+          let effMin = null;
           if (pairedDep) {
             const t1 = Math.floor(new Date(evTs).getTime() / 60000) * 60000;
             const t2 = Math.floor(new Date(pairedDep.photo_timestamp ?? pairedDep.created_at).getTime() / 60000) * 60000;
-            const diffH = (t2 - t1) / 3600000;
-            if (diffH > 0 && diffH < 16) effHours = Math.round(diffH * 100) / 100;
+            const diffM = Math.round((t2 - t1) / 60000);
+            if (diffM > 0 && diffM < 960) effMin = diffM;
           }
-          if (effHours == null) effHours = ev.hours;
-          if (effHours == null) continue;
+          if (effMin == null && ev.duration_min != null) effMin = ev.duration_min;
+          if (effMin == null) continue;
           const key = `${empId}|${toMskDate(evTs)}`;
-          prevDayMax[key] = (prevDayMax[key] || 0) + effHours;
+          prevDayMax[key] = (prevDayMax[key] || 0) + effMin;
         }
       }
       const prevMap = {};   // empId → totalHours прошлого периода
@@ -3557,13 +3564,12 @@
             }
             // Двойная смена: суммируем все смены, синий фон + подсказка
             if (cell.double_shift) {
-              const allHours = (cell.hours || 0) + cell.shift_hours.reduce((a,b)=>a+b,0);
-              const dsTotal = Math.round(allHours*100)/100;
-              if (dsTotal > 0) {
-                totalHours += dsTotal;
+              const allMin = (cell.hours || 0) + cell.shift_hours.reduce((a,b)=>a+b,0);
+              if (allMin > 0) {
+                totalHours += allMin;
                 const parts = cell.hours ? [cell.hours, ...cell.shift_hours] : cell.shift_hours;
-                const tip = `title="Двойная смена: ${parts.map(h=>Math.round(h*100)/100+'ч').join(' + ')}"`;
-                return `<td class="ts-day" style="background:#EFF6FF;color:#1D4ED8;font-weight:700;" ${tip}${photoAttr}>${dsTotal} ✦ ?</td>`;
+                const tip = `title="Двойная смена: ${parts.map(m=>toHM(m)+'ч').join(' + ')}"`;
+                return `<td class="ts-day" style="background:#EFF6FF;color:#1D4ED8;font-weight:700;" ${tip}${photoAttr}>${toHM(allMin)} ✦ ?</td>`;
               }
             }
             if (cell.hours != null) {
@@ -3573,7 +3579,7 @@
                 : wkndStyle;
               const warn = cell.fraud ? ' ⚠️' : '';
               const orphan = cell.orphan_dep ? ' ?' : '';
-              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${Math.round(cell.hours*100)/100}${warn}${orphan}</td>`;
+              return `<td class="ts-day" style="${hlStyle}"${photoAttr}>${toHM(cell.hours)}${warn}${orphan}</td>`;
             }
             // Событие есть, но часы не посчитаны (неполный день или needs_review)
             const incStyle = cell.review
@@ -3583,14 +3589,14 @@
           }).join('');
 
           const prevHours = prevMap[emp.id] || 0;
-          const sum = totalHours * hourlyRate;
+          const sum = (totalHours / 60) * hourlyRate;
           teamHours += totalHours;
           teamSum   += sum;
 
           const _prevMon = mskOf(tsRefDate).getUTCMonth();
           const prevCell = prevHours
             ? `<span title="Часы из ${MONTH_NAMES[_prevMon === 0 ? 11 : _prevMon - 1]}"
-                style="color:var(--accent);font-weight:600;">${prevHours.toFixed(1)}</span>`
+                style="color:var(--accent);font-weight:600;">${toHM(prevHours)}</span>`
             : `<span style="color:#D1D5DB;">0</span>`;
 
           html += `<tr data-team-id="${tid}" data-emp-name="${escHtml(emp.display_name.toLowerCase())}">
@@ -3602,7 +3608,7 @@
             <td class="ts-mob-hide" style="color:var(--muted);">${hourlyRate > 0 ? hourlyRate.toFixed(2) : '<span style="color:#DC2626;font-size:11px;font-weight:600;" title="Ставка не заполнена">⚠ не задана</span>'}</td>
             <td class="ts-mob-hide">${prevCell}</td>
             ${dayCells}
-            <td class="ts-col-total">${totalHours ? totalHours.toFixed(1) : '—'}</td>
+            <td class="ts-col-total">${totalHours ? toHM(totalHours) : '—'}</td>
             <td class="ts-col-sum">${sum ? sum.toLocaleString('ru', {maximumFractionDigits:0}) : '—'}</td>
           </tr>`;
         }
@@ -3684,10 +3690,10 @@
             const cell = empData[dk];
             if (!cell || cell.hours == null) return '';
             totalHours += cell.hours;
-            return cell.hours;
+            return toHM(cell.hours);
           });
-          const prevH = parseFloat((prevMap[emp.id] || 0).toFixed(1)) || '';
-          const sum   = Math.round(totalHours * hourlyRate);
+          const prevH = prevMap[emp.id] ? toHM(prevMap[emp.id]) : '';
+          const sum   = Math.round((totalHours / 60) * hourlyRate);
           tHours += totalHours; tSum += sum;
           aoa.push([
             emp.display_name, emp.position || '',
@@ -3695,7 +3701,7 @@
             hourlyRate        ? parseFloat(hourlyRate.toFixed(2))  : '',
             prevH,
             ...dayCols,
-            totalHours ? parseFloat(totalHours.toFixed(1)) : '',
+            totalHours ? toHM(totalHours) : '',
             sum || ''
           ]);
         }
