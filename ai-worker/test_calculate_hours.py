@@ -1,6 +1,7 @@
 # encoding: utf-8
 """
 Unit tests for calculate_hours() - Etap B buffer-state algorithm.
+Returns integer minutes (not decimal hours) since Step 2 migration.
 Run: python test_calculate_hours.py
 """
 import sys
@@ -57,8 +58,8 @@ arr_id = "arr-001"
 history_s2 = [make_ev("arrival", 0.0, arr_id)]
 
 with patch.object(pe, "sb_get", return_value=history_s2):
-    hours, paired_id, is_double, is_dup = pe.calculate_hours(EMP_ID, dep(9.0))
-    check("S2 hours=9.0",             hours,     9.0)
+    minutes, paired_id, is_double, is_dup = pe.calculate_hours(EMP_ID, dep(9.0))
+    check("S2 minutes=540 (9ч)",      minutes,   540)
     check("S2 paired_id=arr-001",     paired_id, arr_id)
     check("S2 is_double_shift=False", is_double, False)
     check("S2 is_duplicate=False",    is_dup,    False)
@@ -85,8 +86,8 @@ history_s4 = [
     make_ev("arrival",   10.0, arr2_id),
 ]
 with patch.object(pe, "sb_get", return_value=history_s4):
-    hours, paired_id, is_double, is_dup = pe.calculate_hours(EMP_ID, dep(19.0))
-    check("S4 hours=9.0",              hours,     9.0)
+    minutes, paired_id, is_double, is_dup = pe.calculate_hours(EMP_ID, dep(19.0))
+    check("S4 minutes=540 (9ч)",       minutes,   540)
     check("S4 paired_id=arr-002",      paired_id, arr2_id)
     check("S4 is_double_shift=True",   is_double, True)
     check("S4 is_duplicate=False",     is_dup,    False)
